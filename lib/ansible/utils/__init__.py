@@ -19,6 +19,7 @@ import sys
 import os
 import shlex
 import yaml
+import copy
 import optparse
 import operator
 from ansible import errors
@@ -31,6 +32,8 @@ import StringIO
 import stat
 import termios
 import tty
+import pipes
+import random
 
 VERBOSITY=0
 
@@ -83,7 +86,7 @@ def key_for_hostname(hostname):
         return key
     else:
         fh = open(key_path)
-        key = AesKey.Read(fh.read())  
+        key = AesKey.Read(fh.read())
         fh.close()
         return key
 
@@ -135,6 +138,11 @@ def is_failed(result):
 
     return ((result.get('rc', 0) != 0) or (result.get('failed', False) in [ True, 'True', 'true']))
 
+def is_changed(result):
+    ''' is a given JSON result a changed result? '''
+
+    return (result.get('changed', False) in [ True, 'True', 'true'])
+
 def check_conditional(conditional):
 
     def is_set(var):
@@ -143,12 +151,15 @@ def check_conditional(conditional):
     def is_unset(var):
         return var.startswith("$")
 
-    return eval(conditional.replace("\n", "\\n"))
+    try:
+        return eval(conditional.replace("\n", "\\n"))
+    except SyntaxError as e:
+        raise errors.AnsibleError("Could not evaluate the expression: " + conditional)
 
 def is_executable(path):
     '''is the given path executable?'''
-    return (stat.S_IXUSR & os.stat(path)[stat.ST_MODE] 
-            or stat.S_IXGRP & os.stat(path)[stat.ST_MODE] 
+    return (stat.S_IXUSR & os.stat(path)[stat.ST_MODE]
+            or stat.S_IXGRP & os.stat(path)[stat.ST_MODE]
             or stat.S_IXOTH & os.stat(path)[stat.ST_MODE])
 
 def prepare_writeable_dir(tree):
@@ -165,7 +176,9 @@ def prepare_writeable_dir(tree):
         exit("Cannot write to path %s" % tree)
 
 def path_dwim(basedir, given):
-    ''' make relative paths work like folks expect '''
+    '''
+    make relative paths work like folks expect.
+    '''
 
     if given.startswith("/"):
         return given
@@ -181,7 +194,7 @@ def json_loads(data):
 
 def parse_json(raw_data):
     ''' this version for module return data only '''
- 
+
     orig_data = raw_data
 
     # ignore stuff like tcgetattr spewage or other warnings
@@ -261,6 +274,33 @@ def parse_kv(args):
                 options[k]=v
     return options
 
+def merge_hash(a, b):
+    ''' merges hash b into a
+    this means that if b has key k, the resulting has will have a key k
+    which value comes from b
+    said differently, all key/value combination from b will override a's '''
+
+    # and iterate over b keys
+    for k, v in b.iteritems():
+        if k in a and isinstance(a[k], dict):
+            # if this key is a hash and exists in a
+            # we recursively call ourselves with 
+            # the key value of b
+            a[k] = merge_hash(a[k], v)
+        else:
+            # k is not in a, no need to merge b, we just deecopy
+            # or k is not a dictionnary, no need to merge b either, we just deecopy it
+            a[k] = v
+    # finally, return the resulting hash when we're done iterating keys
+    return a
+
+def md5s(data):
+    ''' Return MD5 hex digest of data. '''
+
+    digest = _md5()
+    digest.update(data)
+    return digest.hexdigest()
+
 def md5(filename):
     ''' Return MD5 hex digest of local file, or None if file is not present. '''
 
@@ -285,7 +325,7 @@ def default(value, function):
 def _gitinfo():
     ''' returns a string containing git branch, commit id and commit date '''
     result = None
-    repo_path = os.path.join(os.path.dirname(__file__), '..', '..', '.git')
+    repo_path = os.path.join(os.path.dirname(__file__), '..', '..', '..', '.git')
 
     if os.path.exists(repo_path):
         # Check if the .git is a file. If it is a file, it means that we are in a submodule structure.
@@ -352,7 +392,7 @@ def increment_debug(option, opt, value, parser):
     VERBOSITY += 1
 
 def base_parser(constants=C, usage="", output_opts=False, runas_opts=False,
-    async_opts=False, connect_opts=False, subset_opts=False):
+    async_opts=False, connect_opts=False, subset_opts=False, check_opts=False):
     ''' create an options parser for any ansible script '''
 
     parser = SortedOptParser(usage, version=version("%prog"))
@@ -372,7 +412,7 @@ def base_parser(constants=C, usage="", output_opts=False, runas_opts=False,
         help='ask for sudo password')
     parser.add_option('-M', '--module-path', dest='module_path',
         help="specify path(s) to module library (default=%s)" % constants.DEFAULT_MODULE_PATH,
-        default=constants.DEFAULT_MODULE_PATH)
+        default=None)
 
     if subset_opts:
         parser.add_option('-l', '--limit', default=constants.DEFAULT_SUBSET, dest='subset',
@@ -408,6 +448,11 @@ def base_parser(constants=C, usage="", output_opts=False, runas_opts=False,
             help="set the poll interval if using -B (default=%s)" % constants.DEFAULT_POLL_INTERVAL)
         parser.add_option('-B', '--background', dest='seconds', type='int', default=0,
             help='run asynchronously, failing after X seconds (default=N/A)')
+
+    if check_opts:
+        parser.add_option("-C", "--check", default=False, dest='check', action='store_true',
+            help="don't make any changes, instead try to predict some of the changes that may occur"
+        )
 
     return parser
 
@@ -456,20 +501,6 @@ def filter_leading_non_json_lines(buf):
             filtered_lines.write(line + '\n')
     return filtered_lines.getvalue()
 
-def get_available_modules(dirname=None):
-    """
-    returns a list of modules available based on current directory
-    looks in DEFAULT_MODULE_PATH, all subfolders named library and
-    -M option"""
-    modules_list = set()
-    if dirname is None:
-        dirname = C.DEFAULT_MODULE_PATH
-    for path in dirname.split(os.pathsep):
-        if os.path.exists(path):
-            modules_list.update(os.listdir(path))
-    modules_list = list(modules_list)
-    return modules_list
-
 def boolean(value):
     val = str(value)
     if val.lower() in [ "true", "t", "y", "1", "yes" ]:
@@ -477,4 +508,94 @@ def boolean(value):
     else:
         return False
 
+def compile_when_to_only_if(expression):
+    '''
+    when is a shorthand for writing only_if conditionals.  It requires less quoting
+    magic.  only_if is retained for backwards compatibility.
+    '''
 
+    # when: set $variable
+    # when: unset $variable
+    # when: failed $json_result
+    # when: changed $json_result
+    # when: int $x >= $z and $y < 3
+    # when: int $x in $alist
+    # when: float $x > 2 and $y <= $z
+    # when: str $x != $y
+
+    if type(expression) not in [ str, unicode ]:
+        raise errors.AnsibleError("invalid usage of when_ operator: %s" % expression)
+    tokens = expression.split()
+    if len(tokens) < 2:
+        raise errors.AnsibleError("invalid usage of when_ operator: %s" % expression)
+
+    # when_set / when_unset
+    if tokens[0] in [ 'set', 'unset' ]:
+        tcopy = tokens[1:]
+        for (i,t) in enumerate(tokens[1:]):
+            if t.find("$") != -1:
+                tcopy[i] = "is_%s('''%s''')" % (tokens[0], t)
+            else:
+                tcopy[i] = t
+        return " ".join(tcopy)
+
+
+
+    # when_failed / when_changed
+    elif tokens[0] in [ 'failed', 'changed' ]:
+        tcopy = tokens[1:]
+        for (i,t) in enumerate(tokens[1:]):
+            if t.find("$") != -1:
+                tcopy[i] = "is_%s(%s)" % (tokens[0], t)
+            else:
+                tcopy[i] = t
+        return " ".join(tcopy)
+
+
+
+    # when_integer / when_float / when_string
+    elif tokens[0] in [ 'integer', 'float', 'string' ]:
+        cast = None
+        if tokens[0] == 'integer':
+            cast = 'int'
+        elif tokens[0] == 'string':
+            cast = 'str'
+        elif tokens[0] == 'float':
+            cast = 'float'
+        tcopy = tokens[1:]
+        for (i,t) in enumerate(tokens[1:]):
+            if t.find("$") != -1:
+                # final variable substitution will happen in Runner code
+                tcopy[i] = "%s('''%s''')" % (cast, t)
+            else:
+                tcopy[i] = t
+        return " ".join(tcopy)
+
+    # when_boolean
+    elif tokens[0] in [ 'bool', 'boolean' ]:
+        tcopy = tokens[1:]
+        for (i, t) in enumerate(tcopy):
+            if t.find("$") != -1:
+                tcopy[i] = "(is_set('''%s''') and '''%s'''.lower() not in ('false', 'no', 'n', 'none', '0', ''))" % (t, t)
+        return " ".join(tcopy)
+
+    else:
+        raise errors.AnsibleError("invalid usage of when_ operator: %s" % expression)
+
+def make_sudo_cmd(sudo_user, executable, cmd):
+    """
+    helper function for connection plugins to create sudo commands
+    """
+    # Rather than detect if sudo wants a password this time, -k makes
+    # sudo always ask for a password if one is required.
+    # Passing a quoted compound command to sudo (or sudo -s)
+    # directly doesn't work, so we shellquote it with pipes.quote()
+    # and pass the quoted string to the user's shell.  We loop reading
+    # output until we see the randomly-generated sudo prompt set with
+    # the -p option.
+    randbits = ''.join(chr(random.randint(ord('a'), ord('z'))) for x in xrange(32))
+    prompt = '[sudo via ansible, key=%s] password: ' % randbits
+    sudocmd = '%s -k && %s %s -S -p "%s" -u %s %s -c %s' % (
+        C.DEFAULT_SUDO_EXE, C.DEFAULT_SUDO_EXE, C.DEFAULT_SUDO_FLAGS,
+        prompt, sudo_user, executable or '$SHELL', pipes.quote(cmd))
+    return ('/bin/sh -c ' + pipes.quote(sudocmd), prompt)

@@ -88,14 +88,14 @@ Support for running things from sudo is also available::
     ---
     - hosts: webservers
       user: yourname
-      sudo: True
+      sudo: yes
 
 You can also login as you, and then sudo to different users than root::
 
     ---
     - hosts: webservers
       user: yourname
-      sudo: True
+      sudo: yes
       sudo_user: postgres
 
 If you need to specify a password to sudo, run `ansible-playbook` with ``--ask-sudo-pass`` (`-K`).
@@ -335,9 +335,9 @@ Variables passed in can then be used in the included files.  You can reference t
 the vars section are also available for use here as well.)
 
 .. note::
-   Task include statements are only usable one-level deep.
-   This means task includes can not include other
-   task includes.  This may change in a later release.
+   As of 1.0, task include statements can be used at arbitrary depth.
+   They were previously limited to a single level, so task includes
+   could not include other files containing task includes.
 
 Includes can also be used in the 'handlers' section, for instance, if you
 want to define how to restart apache, you only have to do that once for all

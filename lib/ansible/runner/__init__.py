@@ -28,6 +28,7 @@ import collections
 import socket
 import base64
 import sys
+import shlex
 
 import ansible.constants as C
 import ansible.inventory
@@ -91,7 +92,7 @@ class Runner(object):
 
     def __init__(self,
         host_list=C.DEFAULT_HOST_LIST,      # ex: /etc/ansible/hosts, legacy usage
-        module_path=C.DEFAULT_MODULE_PATH,  # ex: /usr/share/ansible
+        module_path=None,                   # ex: /usr/share/ansible
         module_name=C.DEFAULT_MODULE_NAME,  # ex: copy
         module_args=C.DEFAULT_MODULE_ARGS,  # ex: "src=/tmp/a dest=/tmp/b"
         forks=C.DEFAULT_FORKS,              # parallelism level
@@ -113,10 +114,12 @@ class Runner(object):
         module_vars=None,                   # a playbooks internals thing
         is_playbook=False,                  # running from playbook or not?
         inventory=None,                     # reference to Inventory object
-        subset=None                         # subset pattern
+        subset=None,                        # subset pattern
+        check=False                         # don't make any changes, just try to probe for potential changes
         ):
 
         # storage & defaults
+        self.check            = check
         self.setup_cache      = utils.default(setup_cache, lambda: collections.defaultdict(dict))
         self.basedir          = utils.default(basedir, lambda: os.getcwd())
         self.callbacks        = utils.default(callbacks, lambda: DefaultRunnerCallbacks())
@@ -128,7 +131,6 @@ class Runner(object):
         self.sudo_user        = sudo_user
         self.connector        = connection.Connection(self)
         self.conditional      = conditional
-        self.module_path      = module_path
         self.module_name      = module_name
         self.forks            = int(forks)
         self.pattern          = pattern
@@ -148,10 +150,14 @@ class Runner(object):
             # don't override subset when passed from playbook
             self.inventory.subset(subset)
 
-        if self.transport == 'ssh' and remote_pass:
-            raise errors.AnsibleError("SSH transport does not support passwords, only keys or agents")
         if self.transport == 'local':
             self.remote_user = pwd.getpwuid(os.geteuid())[0]
+
+        if module_path is not None:
+            for i in module_path.split(os.pathsep):
+                utils.plugins.module_finder.add_directory(i)
+
+        utils.plugins.push_basedir(self.basedir)
 
         # ensure we are using unique tmp paths
         random.seed()
@@ -203,6 +209,11 @@ class Runner(object):
 
         cmd = ""
         if not is_new_style:
+            if 'CHECKMODE=True' in args:
+                # if module isn't using AnsibleModuleCommon infrastructure we can't be certain it knows how to
+                # do --check mode, so to be safe we will not run it.
+                return ReturnData(conn=conn, result=dict(skippped=True, msg="cannot run check mode against old-style modules"))
+
             args = utils.template(self.basedir, args, inject)
             argsfile = self._transfer_str(conn, tmp, 'arguments', args)
             if async_jid is None:
@@ -219,10 +230,10 @@ class Runner(object):
             raise errors.AnsibleError("module is missing interpreter line")
 
         cmd = shebang.replace("#!","") + " " + cmd
-        if tmp.find("tmp") != -1:
+        if tmp.find("tmp") != -1 and C.DEFAULT_KEEP_REMOTE_FILES != '1':
             cmd = cmd + "; rm -rf %s >/dev/null 2>&1" % tmp
         res = self._low_level_exec_command(conn, cmd, tmp, sudoable=True)
-        return ReturnData(conn=conn, result=res)
+        return ReturnData(conn=conn, result=res['stdout'])
 
     # *****************************************************
 
@@ -273,7 +284,7 @@ class Runner(object):
         items_plugin = self.module_vars.get('items_lookup_plugin', None)
         if items_plugin is not None and items_plugin in utils.plugins.lookup_loader:
             items_terms = self.module_vars.get('items_lookup_terms', '')
-            items_terms = utils.template_ds(self.basedir, items_terms, inject)
+            items_terms = utils.template(self.basedir, items_terms, inject)
             items = utils.plugins.lookup_loader.get(items_plugin, runner=self, basedir=self.basedir).run(items_terms, inject=inject)
             if type(items) != list:
                 raise errors.AnsibleError("lookup plugins have to return a list: %r" % items)
@@ -325,13 +336,6 @@ class Runner(object):
     def _executor_internal_inner(self, host, module_name, module_args, inject, port, is_chained=False):
         ''' decides how to invoke a module '''
 
-        # special non-user/non-fact variables:
-        # 'groups' variable is a list of host name in each group
-        # 'hostvars' variable contains variables for each host name
-        #  ... and is set elsewhere
-        # 'inventory_hostname' is also set elsewhere
-        inject['groups'] = self.inventory.groups_list()
-
         # allow module args to work as a dictionary
         # though it is usually a string
         new_args = ""
@@ -340,8 +344,20 @@ class Runner(object):
                 new_args = new_args + "%s='%s' " % (k,v)
             module_args = new_args
 
+        module_name = utils.template(self.basedir, module_name, inject)
+        module_args = utils.template(self.basedir, module_args, inject, expand_lists=True)
+
+        if module_name in utils.plugins.action_loader:
+            if self.background != 0:
+                raise errors.AnsibleError("async mode is not supported with the %s module" % module_name)
+            handler = utils.plugins.action_loader.get(module_name, self)
+        elif self.background == 0:
+            handler = utils.plugins.action_loader.get('normal', self)
+        else:
+            handler = utils.plugins.action_loader.get('async', self)
+
         conditional = utils.template(self.basedir, self.conditional, inject)
-        if not utils.check_conditional(conditional):
+        if not getattr(handler, 'BYPASS_HOST_LOOP', False) and not utils.check_conditional(conditional):
             result = utils.jsonify(dict(skipped=True))
             self.callbacks.on_skipped(host, inject.get('item',None))
             return ReturnData(host=host, result=result)
@@ -379,6 +395,11 @@ class Runner(object):
         try:
             if actual_port is not None:
                 actual_port = int(actual_port)
+        except ValueError, e:
+            result = dict(failed=True, msg="FAILED: Configured port \"%s\" is not a valid port, expected integer" % actual_port)
+            return ReturnData(host=host, comm_ok=False, result=result)
+
+        try:
             conn = self.connector.connect(actual_host, actual_port)
             if delegate_to or host != actual_host:
                 conn.delegate = host
@@ -388,24 +409,12 @@ class Runner(object):
             result = dict(failed=True, msg="FAILED: %s" % str(e))
             return ReturnData(host=host, comm_ok=False, result=result)
 
-        module_name = utils.template(self.basedir, module_name, inject)
-        module_args = utils.template(self.basedir, module_args, inject, expand_lists=True)
-
         tmp = ''
-        if self.module_name != 'raw':
+        # all modules get a tempdir, action plugins get one unless they have NEEDS_TMPPATH set to False
+        if getattr(handler, 'NEEDS_TMPPATH', True):
             tmp = self._make_tmp_path(conn)
-        result = None
 
-        if module_name in utils.plugins.action_loader:
-            if self.background != 0:
-                raise errors.AnsibleError("async mode is not supported with the %s module" % module_name)
-            handler = utils.plugins.action_loader.get(module_name, self)
-            result = handler.run(conn, tmp, module_name, module_args, inject)
-        else:
-            if self.background == 0:
-                result = utils.plugins.action_loader.get('normal', self).run(conn, tmp, module_name, module_args, inject)
-            else:
-                result = utils.plugins.action_loader.get('async', self).run(conn, tmp, module_name, module_args, inject)
+        result = handler.run(conn, tmp, module_name, module_args, inject)
 
         conn.close()
 
@@ -436,23 +445,29 @@ class Runner(object):
 
     # *****************************************************
 
-    def _low_level_exec_command(self, conn, cmd, tmp, sudoable=False):
+    def _low_level_exec_command(self, conn, cmd, tmp, sudoable=False, executable=None):
         ''' execute a command string over SSH, return the output '''
 
+        if executable is None:
+            executable = '/bin/sh'
+
         sudo_user = self.sudo_user
-        stdin, stdout, stderr = conn.exec_command(cmd, tmp, sudo_user, sudoable=sudoable)
+        rc, stdin, stdout, stderr = conn.exec_command(cmd, tmp, sudo_user, sudoable=sudoable, executable=executable)
 
         if type(stdout) not in [ str, unicode ]:
-            out = "\n".join(stdout.readlines())
+            out = ''.join(stdout.readlines())
         else:
             out = stdout
 
         if type(stderr) not in [ str, unicode ]:
-            err = "\n".join(stderr.readlines())
+            err = ''.join(stderr.readlines())
         else:
             err = stderr
 
-        return out + err
+        if rc != None:
+            return dict(rc=rc, stdout=out, stderr=err )
+        else:
+            return dict(stdout=out, stderr=err )
 
     # *****************************************************
 
@@ -472,7 +487,7 @@ class Runner(object):
         cmd = " || ".join(md5s)
         cmd = "%s; %s || (echo \"${rc}  %s\")" % (test, cmd, path)
         data = self._low_level_exec_command(conn, cmd, tmp, sudoable=False)
-        data2 = utils.last_non_blank_line(data)
+        data2 = utils.last_non_blank_line(data['stdout'])
         try:
             return data2.split()[0]
         except IndexError:
@@ -491,9 +506,7 @@ class Runner(object):
 
         basefile = 'ansible-%s-%s' % (time.time(), random.randint(0, 2**48))
         basetmp = os.path.join(C.DEFAULT_REMOTE_TMP, basefile)
-        if self.remote_user == 'root':
-            basetmp = os.path.join('/var/tmp', basefile)
-        elif self.sudo and self.sudo_user != 'root':
+        if self.sudo and self.sudo_user != 'root':
             basetmp = os.path.join('/tmp', basefile)
 
         cmd = 'mkdir -p %s' % basetmp
@@ -502,7 +515,7 @@ class Runner(object):
         cmd += ' && echo %s' % basetmp
 
         result = self._low_level_exec_command(conn, cmd, None, sudoable=False)
-        rc = utils.last_non_blank_line(result).strip() + '/'
+        rc = utils.last_non_blank_line(result['stdout']).strip() + '/'
         return rc
 
 
@@ -515,12 +528,9 @@ class Runner(object):
             raise errors.AnsibleFileNotFound("%s is not a module" % module_name)
 
         # Search module path(s) for named module.
-        for module_path in self.module_path.split(os.pathsep):
-            in_path = os.path.expanduser(os.path.join(module_path, module_name))
-            if os.path.exists(in_path):
-                break
-        else:
-            raise errors.AnsibleFileNotFound("module %s not found in %s" % (module_name, self.module_path))
+        in_path = utils.plugins.module_finder.find_plugin(module_name)
+        if in_path is None:
+            raise errors.AnsibleFileNotFound("module %s not found in %s" % (module_name, utils.plugins.module_finder.print_paths()))
 
         out_path = os.path.join(tmp, module_name)
 
@@ -534,26 +544,27 @@ class Runner(object):
             module_data = module_data.replace(module_common.REPLACER, module_common.MODULE_COMMON)
             encoded_args = "\"\"\"%s\"\"\"" % module_args.replace("\"","\\\"")
             module_data = module_data.replace(module_common.REPLACER_ARGS, encoded_args)
+            encoded_lang = "\"\"\"%s\"\"\"" % C.DEFAULT_MODULE_LANG
+            module_data = module_data.replace(module_common.REPLACER_LANG, encoded_lang)
             if is_new_style:
                 facility = C.DEFAULT_SYSLOG_FACILITY
                 if 'ansible_syslog_facility' in inject:
                     facility = inject['ansible_syslog_facility']
                 module_data = module_data.replace('syslog.LOG_USER', "syslog.%s" % facility)
 
-        # use the correct python interpreter for the host
-        if 'ansible_python_interpreter' in inject:
-            interpreter = inject['ansible_python_interpreter']
-            module_lines = module_data.split('\n')
-            if '#!' and 'python' in module_lines[0]:
-                module_lines[0] = "#!%s" % interpreter
-            module_data = "\n".join(module_lines)
-
-        self._transfer_str(conn, tmp, module_name, module_data)
-
         lines = module_data.split("\n")
         shebang = None
         if lines[0].startswith("#!"):
             shebang = lines[0]
+            args = shlex.split(str(shebang[2:]))
+            interpreter = args[0]
+            interpreter_config = 'ansible_%s_interpreter' % os.path.basename(interpreter)
+
+            if interpreter_config in inject:
+                lines[0] = shebang = "#!%s %s" % (inject[interpreter_config], " ".join(args[1:]))
+                module_data = "\n".join(lines)
+
+        self._transfer_str(conn, tmp, module_name, module_data)
 
         return (out_path, is_new_style, shebang)
 

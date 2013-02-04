@@ -16,15 +16,9 @@
 # along with Ansible.  If not, see <http://www.gnu.org/licenses/>.
 
 import os
-import pwd
-import random
-import traceback
-import tempfile
 
-import ansible.constants as C
 from ansible import utils
 from ansible import errors
-from ansible import module_common
 from ansible.runner.return_data import ReturnData
 
 class ActionModule(object):
@@ -35,6 +29,9 @@ class ActionModule(object):
     def run(self, conn, tmp, module_name, module_args, inject):
         ''' handler for template operations '''
 
+        # note: since this module just calls the copy module, the --check mode support
+        # can be implemented entirely over there
+
         if not self.runner.is_playbook:
             raise errors.AnsibleError("in current versions of ansible, templates are only usable in playbooks")
 
@@ -42,10 +39,6 @@ class ActionModule(object):
         options  = utils.parse_kv(module_args)
         source   = options.get('src', None)
         dest     = options.get('dest', None)
-
-        if dest.endswith("/"):
-            base = os.path.basename(source)
-            dest = os.path.join(dest, base)
 
         if (source is None and 'first_available_file' not in inject) or dest is None:
             result = dict(failed=True, msg="src and dest are required")
@@ -68,21 +61,36 @@ class ActionModule(object):
         else:
             source = utils.template(self.runner.basedir, source, inject)
 
-        # template the source data locally & transfer
+        if dest.endswith("/"):
+            base = os.path.basename(source)
+            dest = os.path.join(dest, base)
+
+        # template the source data locally & get ready to transfer
         try:
             resultant = utils.template_from_file(self.runner.basedir, source, inject)
         except Exception, e:
             result = dict(failed=True, msg=str(e))
             return ReturnData(conn=conn, comm_ok=False, result=result)
 
-        xfered = self.runner._transfer_str(conn, tmp, 'source', resultant)
-        # fix file permissions when the copy is done as a different user
-        if self.runner.sudo and self.runner.sudo_user != 'root':
-            self.runner._low_level_exec_command(conn, "chmod a+r %s" % xfered, 
-                tmp)
+        local_md5 = utils.md5s(resultant)
+        remote_md5 = self.runner._remote_md5(conn, tmp, dest)
 
-        # run the copy module
-        module_args = "%s src=%s dest=%s" % (module_args, xfered, dest)
-        return self.runner._execute_module(conn, tmp, 'copy', module_args, inject=inject)
+        if local_md5 != remote_md5:
 
+             # template is different from the remote value
+
+             xfered = self.runner._transfer_str(conn, tmp, 'source', resultant)
+             # fix file permissions when the copy is done as a different user
+             if self.runner.sudo and self.runner.sudo_user != 'root':
+                 self.runner._low_level_exec_command(conn, "chmod a+r %s" % xfered, tmp)
+
+             # run the copy module
+             module_args = "%s src=%s dest=%s" % (module_args, xfered, dest)
+
+             if self.runner.check:
+                 return ReturnData(conn=conn, comm_ok=True, result=dict(changed=True))
+             else:
+                 return self.runner._execute_module(conn, tmp, 'copy', module_args, inject=inject)
+        else:
+             return ReturnData(conn=conn, comm_ok=True, result=dict(changed=False))
 

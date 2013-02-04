@@ -21,7 +21,13 @@ class LookupModule(object):
         pass
 
     def run(self, terms, **kwargs):
+<<<<<<< HEAD
         return terms
 
 
 
+=======
+        if isinstance(terms, basestring):
+            terms = [ terms ]
+        return [term for term in terms]
+>>>>>>> ansible/devel

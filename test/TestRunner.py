@@ -10,6 +10,7 @@ import os
 import shutil
 import time
 import tempfile
+import urllib2
 
 from nose.plugins.skip import SkipTest
 
@@ -35,6 +36,7 @@ class TestRunner(unittest.TestCase):
             forks=1,
             background=0,
             pattern='all',
+            transport='local',
         )
         self.cwd = os.getcwd()
         self.test_dir = os.path.join(self.cwd, 'test')
@@ -287,3 +289,4 @@ class TestRunner(unittest.TestCase):
         ])
         print result
         assert result['changed'] == False
+

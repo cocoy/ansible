@@ -22,6 +22,7 @@ import socket
 import random
 from ansible.callbacks import vvv
 from ansible import errors
+from ansible import utils
 
 # prevent paramiko warning noise -- see http://stackoverflow.com/questions/3920502/
 HAVE_PARAMIKO=False
@@ -80,8 +81,12 @@ class Connection(object):
         if self.runner.remote_pass is not None:
             allow_agent = False
         try:
+            if self.runner.private_key_file:
+                key_filename = os.path.expanduser(self.runner.private_key_file)
+            else:
+                key_filename = None
             ssh.connect(self.host, username=user, allow_agent=allow_agent, look_for_keys=True,
-                key_filename=self.runner.private_key_file, password=self.runner.remote_pass,
+                key_filename=key_filename, password=self.runner.remote_pass,
                 timeout=self.runner.timeout, port=self.port)
         except Exception, e:
             msg = str(e)
@@ -96,7 +101,7 @@ class Connection(object):
 
         return ssh
 
-    def exec_command(self, cmd, tmp_path, sudo_user, sudoable=False):
+    def exec_command(self, cmd, tmp_path, sudo_user, sudoable=False, executable='/bin/sh'):
         ''' run a command on the remote host '''
 
         bufsize = 4096
@@ -110,25 +115,18 @@ class Connection(object):
         chan.get_pty()
 
         if not self.runner.sudo or not sudoable:
-            quoted_command = '/bin/sh -c ' + pipes.quote(cmd)
+            if executable:
+                quoted_command = executable + ' -c ' + pipes.quote(cmd)
+            else:
+                quoted_command = cmd
             vvv("EXEC %s" % quoted_command, host=self.host)
             chan.exec_command(quoted_command)
         else:
-            # Rather than detect if sudo wants a password this time, -k makes
-            # sudo always ask for a password if one is required. 
-            # Passing a quoted compound command to sudo (or sudo -s)
-            # directly doesn't work, so we shellquote it with pipes.quote()
-            # and pass the quoted string to the user's shell.  We loop reading
-            # output until we see the randomly-generated sudo prompt set with
-            # the -p option.
-            randbits = ''.join(chr(random.randint(ord('a'), ord('z'))) for x in xrange(32))
-            prompt = '[sudo via ansible, key=%s] password: ' % randbits
-            sudocmd = 'sudo -k && sudo -p "%s" -u %s /bin/sh -c %s' % (
-                prompt, sudo_user, pipes.quote(cmd))
-            vvv("EXEC %s" % sudocmd, host=self.host)
+            shcmd, prompt = utils.make_sudo_cmd(sudo_user, executable, cmd)
+            vvv("EXEC %s" % shcmd, host=self.host)
             sudo_output = ''
             try:
-                chan.exec_command(sudocmd)
+                chan.exec_command(shcmd)
                 if self.runner.sudo_pass:
                     while not sudo_output.endswith(prompt):
                         chunk = chan.recv(bufsize)
@@ -144,7 +142,9 @@ class Connection(object):
             except socket.timeout:
                 raise errors.AnsibleError('ssh timed out waiting for sudo.\n' + sudo_output)
 
-        return (chan.makefile('wb', bufsize), chan.makefile('rb', bufsize), '')
+        stdout = ''.join(chan.makefile('rb', bufsize))
+        stderr = ''.join(chan.makefile_stderr('rb', bufsize))
+        return (chan.recv_exit_status(), '', stdout, stderr)
 
     def put_file(self, in_path, out_path):
         ''' transfer a file from local to remote '''

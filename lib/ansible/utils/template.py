@@ -31,9 +31,15 @@ import pwd
 # TODO: refactor this file
 
 _LISTRE = re.compile(r"(\w+)\[(\d+)\]")
+<<<<<<< HEAD
 
 
 def _varFindLimitSpace(basedir, vars, space, part, depth):
+=======
+JINJA2_OVERRIDE='#jinja2:'
+
+def _varFindLimitSpace(basedir, vars, space, part, lookup_fatal, depth):
+>>>>>>> ansible/devel
     ''' limits the search space of space to part
     
     basically does space.get(part, None), but with
@@ -47,7 +53,11 @@ def _varFindLimitSpace(basedir, vars, space, part, depth):
     if part[0] == '{' and part[-1] == '}':
         part = part[1:-1]
     # Template part to resolve variables within (${var$var2})
+<<<<<<< HEAD
     part = varReplace(basedir, part, vars, depth=depth + 1)
+=======
+    part = varReplace(basedir, part, vars, lookup_fatal, depth=depth + 1)
+>>>>>>> ansible/devel
 
     # Now find it
     if part in space:
@@ -64,9 +74,19 @@ def _varFindLimitSpace(basedir, vars, space, part, depth):
     else:
         return None
 
+<<<<<<< HEAD
     return space
 
 def _varFind(basedir, text, vars, depth=0):
+=======
+    # if space is a string, check if it's a reference to another variable
+    if isinstance(space, basestring):
+        space = template(basedir, space, vars, lookup_fatal, depth)
+
+    return space
+
+def _varFind(basedir, text, vars, lookup_fatal, depth=0):
+>>>>>>> ansible/devel
     ''' Searches for a variable in text and finds its replacement in vars
 
     The variables can have two formats;
@@ -135,7 +155,11 @@ def _varFind(basedir, text, vars, depth=0):
             pass
         elif is_complex and text[end] == '.':
             if brace_level == 1:
+<<<<<<< HEAD
                 space = _varFindLimitSpace(basedir, vars, space, text[part_start:end], depth)
+=======
+                space = _varFindLimitSpace(basedir, vars, space, text[part_start:end], lookup_fatal, depth)
+>>>>>>> ansible/devel
                 part_start = end + 1
         else:
             # This breaks out of the loop on non-variable name characters
@@ -161,7 +185,17 @@ def _varFind(basedir, text, vars, depth=0):
         args = varReplace(basedir, args, vars, depth=depth+1, expand_lists=True)
         instance = utils.plugins.lookup_loader.get(lookup_plugin_name.lower(), basedir=basedir)
         if instance is not None:
+<<<<<<< HEAD
             replacement = instance.run(args, inject=vars)
+=======
+            try:
+                replacement = instance.run(args, inject=vars)
+            except errors.AnsibleError:
+                if not lookup_fatal:
+                    replacement = None
+                else:
+                    raise
+>>>>>>> ansible/devel
         else:
             replacement = None
         return {'replacement': replacement, 'start': start, 'end': end}
@@ -170,6 +204,7 @@ def _varFind(basedir, text, vars, depth=0):
         var_end -= 1
         if text[var_end] != '}' or brace_level != 0:
             return None
+<<<<<<< HEAD
     space = _varFindLimitSpace(basedir, vars, space, text[part_start:var_end], depth)
     return {'replacement': space, 'start': start, 'end': end}
 
@@ -177,13 +212,29 @@ def varReplace(basedir, raw, vars, depth=0, expand_lists=False):
     ''' Perform variable replacement of $variables in string raw using vars dictionary '''
     # this code originally from yum
 
+=======
+    space = _varFindLimitSpace(basedir, vars, space, text[part_start:var_end], lookup_fatal, depth)
+    return {'replacement': space, 'start': start, 'end': end}
+
+def varReplace(basedir, raw, vars, lookup_fatal=True, depth=0, expand_lists=False):
+    ''' Perform variable replacement of $variables in string raw using vars dictionary '''
+    # this code originally from yum
+
+    if not isinstance(raw, unicode):
+        raw = raw.decode("utf-8")
+
+>>>>>>> ansible/devel
     if (depth > 20):
         raise errors.AnsibleError("template recursion depth exceeded")
 
     done = [] # Completed chunks to return
 
     while raw:
+<<<<<<< HEAD
         m = _varFind(basedir, raw, vars, depth)
+=======
+        m = _varFind(basedir, raw, vars, lookup_fatal, depth)
+>>>>>>> ansible/devel
         if not m:
             done.append(raw)
             break
@@ -195,7 +246,11 @@ def varReplace(basedir, raw, vars, depth=0, expand_lists=False):
         if expand_lists and isinstance(replacement, (list, tuple)):
             replacement = ",".join(replacement)
         if isinstance(replacement, (str, unicode)):
+<<<<<<< HEAD
             replacement = varReplace(basedir, replacement, vars, depth=depth+1, expand_lists=expand_lists)
+=======
+            replacement = varReplace(basedir, replacement, vars, lookup_fatal, depth=depth+1, expand_lists=expand_lists)
+>>>>>>> ansible/devel
         if replacement is None:
             replacement = raw[m['start']:m['end']]
 
@@ -206,15 +261,24 @@ def varReplace(basedir, raw, vars, depth=0, expand_lists=False):
 
     return ''.join(done)
 
+<<<<<<< HEAD
 def template_ds(basedir, varname, vars):
     ''' templates a data structure by traversing it and substituting for other data structures '''
 
     if isinstance(varname, basestring):
         m = _varFind(basedir, varname, vars)
+=======
+def template(basedir, varname, vars, lookup_fatal=True, expand_lists=True, depth=0):
+    ''' templates a data structure by traversing it and substituting for other data structures '''
+
+    if isinstance(varname, basestring):
+        m = _varFind(basedir, varname, vars, lookup_fatal, depth)
+>>>>>>> ansible/devel
         if not m:
             return varname
         if m['start'] == 0 and m['end'] == len(varname):
             if m['replacement'] is not None:
+<<<<<<< HEAD
                 return template_ds(basedir, m['replacement'], vars)
             else:
                 return varname
@@ -226,10 +290,24 @@ def template_ds(basedir, varname, vars):
         d = {}
         for (k, v) in varname.iteritems():
             d[k] = template_ds(basedir, v, vars)
+=======
+                return template(basedir, m['replacement'], vars, lookup_fatal, expand_lists, depth)
+            else:
+                return varname
+        else:
+            return varReplace(basedir, varname, vars, lookup_fatal, depth=depth, expand_lists=expand_lists)
+    elif isinstance(varname, (list, tuple)):
+        return [template(basedir, v, vars, lookup_fatal, expand_lists, depth) for v in varname]
+    elif isinstance(varname, dict):
+        d = {}
+        for (k, v) in varname.iteritems():
+            d[k] = template(basedir, v, vars, lookup_fatal, expand_lists, depth)
+>>>>>>> ansible/devel
         return d
     else:
         return varname
 
+<<<<<<< HEAD
 def template(basedir, text, vars, expand_lists=False):
     ''' run a text buffer through the templating engine until it no longer changes '''
 
@@ -250,12 +328,69 @@ class _jinja2_vars(object):
     def __getitem__(self, varname):
         if varname not in self.vars:
             raise KeyError("undefined variable: %s" % varname)
+=======
+class _jinja2_vars(object):
+    '''
+    Helper class to template all variable content before jinja2 sees it.
+    This is done by hijacking the variable storage that jinja2 uses, and
+    overriding __contains__ and __getitem__ to look like a dict. Added bonus
+    is avoiding duplicating the large hashes that inject tends to be.
+    To facilitate using builtin jinja2 things like range, globals are handled
+    here.
+    extras is a list of locals to also search for variables. 
+    '''
+    def __init__(self, basedir, vars, globals, *extras):
+        self.basedir = basedir
+        self.vars = vars
+        self.globals = globals
+        self.extras = extras
+    def __contains__(self, k):
+        if k in self.vars:
+            return True
+        for i in self.extras:
+            if k in i:
+                return True
+        if k in self.globals:
+            return True
+        return False
+    def __getitem__(self, varname):
+        if varname not in self.vars:
+            for i in self.extras:
+                if varname in i:
+                    return i[varname]
+            if varname in self.globals:
+                return self.globals[varname]
+            else:
+                raise KeyError("undefined variable: %s" % varname)
+>>>>>>> ansible/devel
         var = self.vars[varname]
         # HostVars is special, return it as-is
         if isinstance(var, dict) and type(var) != dict:
             return var
         else:
+<<<<<<< HEAD
             return template_ds(self.basedir, var, self.vars)
+=======
+            return template(self.basedir, var, self.vars)
+    def add_locals(self, locals):
+        '''
+        If locals are provided, create a copy of self containing those
+        locals in addition to what is already in this variable proxy.
+        '''
+        if locals is None:
+            return self
+        return _jinja2_vars(self.basedir, self.vars, self.globals, locals, *self.extras)
+
+class J2Template(jinja2.environment.Template):
+    '''
+    This class prevents Jinja2 from running _jinja2_vars through dict()
+    Without this, {% include %} and similar will create new contexts unlike
+    the special one created in template_from_file. This ensures they are all
+    alike, with the exception of potential locals.
+    '''
+    def new_context(self, vars=None, shared=False, locals=None):
+        return jinja2.runtime.Context(self.environment, vars.add_locals(locals), self.name, self.blocks)
+>>>>>>> ansible/devel
 
 def template_from_file(basedir, path, vars):
     ''' run a file through the templating engine '''
@@ -275,6 +410,20 @@ def template_from_file(basedir, path, vars):
         raise errors.AnsibleError("unable to process as utf-8: %s" % realpath)
     except:
         raise errors.AnsibleError("unable to read %s" % realpath)
+<<<<<<< HEAD
+=======
+
+    # Get jinja env overrides from template
+    if data.startswith(JINJA2_OVERRIDE):
+        eol = data.find('\n')
+        line = data[len(JINJA2_OVERRIDE):eol]
+        data = data[eol+1:]
+        for pair in line.split(','):
+            (key,val) = pair.split(':')
+            setattr(environment,key.strip(),val.strip())
+
+    environment.template_class = J2Template
+>>>>>>> ansible/devel
     t = environment.from_string(data)
     vars = vars.copy()
     try:
@@ -285,6 +434,11 @@ def template_from_file(basedir, path, vars):
     vars['template_path']   = realpath
     vars['template_mtime']  = datetime.datetime.fromtimestamp(os.path.getmtime(realpath))
     vars['template_uid']    = template_uid
+<<<<<<< HEAD
+=======
+    vars['template_fullpath'] = os.path.abspath(realpath)
+    vars['template_run_date'] = datetime.datetime.now()
+>>>>>>> ansible/devel
 
     managed_default = C.DEFAULT_MANAGED_STR
     managed_str = managed_default.format(
@@ -298,7 +452,11 @@ def template_from_file(basedir, path, vars):
     # This line performs deep Jinja2 magic that uses the _jinja2_vars object for vars
     # Ideally, this could use some API where setting shared=True and the object won't get
     # passed through dict(o), but I have not found that yet.
+<<<<<<< HEAD
     res = jinja2.utils.concat(t.root_render_func(t.new_context(_jinja2_vars(basedir, vars), shared=True)))
+=======
+    res = jinja2.utils.concat(t.root_render_func(t.new_context(_jinja2_vars(basedir, vars, t.globals), shared=True)))
+>>>>>>> ansible/devel
 
     if data.endswith('\n') and not res.endswith('\n'):
         res = res + '\n'

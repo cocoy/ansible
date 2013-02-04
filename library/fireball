@@ -24,7 +24,7 @@ module: fireball
 short_description: Enable fireball mode on remote node
 description:
      - This modules launches an ephemeral I(fireball) ZeroMQ message bus daemon on the remote node which
-       Ansible can to communicate with nodes at high speed. 
+       Ansible can use to communicate with nodes at high speed.
      - The daemon listens on a configurable port for a configurable amount of time.
      - Starting a new fireball as a given user terminates any existing user fireballs.
      - Fireball mode is AES encrypted
@@ -50,7 +50,7 @@ examples:
                  connection: ssh
                  sudo: yes
                  tasks:
-                     - action: fireball 
+                     - action: fireball
            - hosts: devservers
                  connection: fireball
                  tasks:
@@ -70,7 +70,6 @@ import base64
 import syslog
 import signal
 import time
-import subprocess
 import signal
 
 syslog.openlog('ansible-%s' % os.path.basename(__file__))
@@ -144,23 +143,24 @@ def daemonize_self(module, password, port, minutes):
     os.dup2(dev_null.fileno(), sys.stderr.fileno())
     log("daemonizing successful (%s,%s)" % (password, port))
 
-def command(data):
+def command(module, data):
     if 'cmd' not in data:
         return dict(failed=True, msg='internal error: cmd is required')
     if 'tmp_path' not in data:
         return dict(failed=True, msg='internal error: tmp_path is required')
+    if 'executable' not in data:
+        return dict(failed=True, msg='internal error: executable is required')
 
     log("executing: %s" % data['cmd'])
-    p = subprocess.Popen(data['cmd'], shell=True, stdout=subprocess.PIPE, close_fds=True)
-    (stdout, stderr) = p.communicate()
+    rc, stdout, stderr = module.run_command(data['cmd'], executable=data['executable'], close_fds=True)
     if stdout is None:
         stdout = ''
     if stderr is None:
         stderr = ''
     log("got stdout: %s" % stdout)
 
-    return dict(stdout=stdout, stderr=stderr)
-  
+    return dict(rc=rc, stdout=stdout, stderr=stderr)
+
 def fetch(data):
     if 'in_path' not in data:
         return dict(failed=True, msg='internal error: in_path is required')
@@ -179,7 +179,7 @@ def put(data):
         return dict(failed=True, msg='internal error: data is required')
     if 'out_path' not in data:
         return dict(failed=True, msg='internal error: out_path is required')
-    
+
     # FIXME: should probably support chunked file transfer for binary files
     # at some point.  For now, just base64 encodes the file
     # so don't use it to move ISOs, use rsync.
@@ -204,7 +204,7 @@ def serve(module, password, port, minutes):
     # password as a variable in ansible is never logged though, so it serves well
 
     key = AesKey.Read(password)
- 
+
     while True:
 
         data = socket.recv()
@@ -220,7 +220,7 @@ def serve(module, password, port, minutes):
         response = {}
 
         if mode == 'command':
-            response = command(data)
+            response = command(module, data)
         elif mode == 'put':
             response = put(data)
         elif mode == 'fetch':
@@ -264,10 +264,10 @@ def main():
     if not HAS_ZMQ:
         module.fail_json(msg="zmq is not installed")
     if not HAS_KEYCZAR:
-        module.fail_json(msg="keyczar is not installed")    
+        module.fail_json(msg="keyczar is not installed")
 
     daemonize(module, password, port, minutes)
-   
+
 
 # this is magic, see lib/ansible/module_common.py
 #<<INCLUDE_ANSIBLE_MODULE_COMMON>>

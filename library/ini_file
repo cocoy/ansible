@@ -74,6 +74,10 @@ examples:
 notes:
    - While it is possible to add an I(option) without specifying a I(value), this makes
      no sense.
+   - A section named C(default) cannot be added by the module, but if it exists, individual
+     options within the section can be updated. (This is a limitation of Python's I(ConfigParser).)
+     Either use M(template) to create a base INI file with a C([default]) section, or use
+     M(lineinfile) to add the missing line.
 requirements: [ ConfigParser ]
 author: Jan-Piet Mens
 '''
@@ -112,6 +116,9 @@ def do_ini(module, filename, section=None, option=None, value=None, state='prese
 
     if state == 'present':
         if cp.has_section(section) == False:
+            if section.upper() == 'DEFAULT':
+                module.fail_json(msg="[DEFAULT] is an illegal section name")
+
             cp.add_section(section)
             changed = True
 
@@ -121,6 +128,9 @@ def do_ini(module, filename, section=None, option=None, value=None, state='prese
                 if str(value) != str(oldvalue):
                     cp.set(section, option, value)
                     changed = True
+            except ConfigParser.NoSectionError:
+                cp.set(section, option, value)
+                changed = True
             except ConfigParser.NoOptionError:
                 cp.set(section, option, value)
                 changed = True
@@ -143,8 +153,6 @@ def do_ini(module, filename, section=None, option=None, value=None, state='prese
 def main():
 
     module = AnsibleModule(
-        # not checking because of daisy chain to file module
-        check_invalid_arguments = False,
         argument_spec = dict(
             dest = dict(required=True),
             section = dict(required=True),
@@ -152,7 +160,8 @@ def main():
             value = dict(required=False),
             backup = dict(default='no', choices=BOOLEANS),
             state = dict(default='present', choices=['present', 'absent'])
-        )
+        ),
+        add_file_common_args = True
     )
 
     info = dict()
@@ -166,14 +175,11 @@ def main():
 
     changed = do_ini(module, dest, section, option, value, state, backup)
 
-    info['daisychain_args'] = module.params
-    info['daisychain_args']['state'] = 'file'
-    info['daisychain_args']['dest'] = dest
+    file_args = module.load_file_common_arguments(module.params)
+    changed = module.set_file_attributes_if_different(file_args, changed)
 
     # Mission complete
-    module.exit_json(dest=dest, 
-        changed=changed, msg="OK",
-        daisychain="file", daisychain_args=info.get('daisychain_args',''))
+    module.exit_json(dest=dest, changed=changed, msg="OK")
 
 # this is magic, see lib/ansible/module_common.py
 #<<INCLUDE_ANSIBLE_MODULE_COMMON>>

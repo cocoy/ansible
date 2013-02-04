@@ -28,7 +28,7 @@ description:
      step, which works on one database at a time. This allows for the module to
      be called several times in the same module to modify the permissions on
      different databases, or to grant permissions to already existing users.
-   - A user cannot be removed untill all the privileges have been stripped from
+   - A user cannot be removed until all the privileges have been stripped from
      the user. In such situation, if the module tries to remove the user it
      will fail. To avoid this from happening the fail_on_user option signals
      the module to try to remove the user, but if not possible keep going; the
@@ -53,7 +53,7 @@ options:
     default: null
   fail_on_user:
     description:
-      - if yes, fail when user can't be removed. Otherwise just log and continue
+      - if C(yes), fail when user can't be removed. Otherwise just log and continue
     required: false
     default: yes
     choices: [ "yes", "no" ]
@@ -136,7 +136,7 @@ def user_exists(cursor, user):
 
 def user_add(cursor, user, password, role_attr_flags):
     """Create a new user with write access to the database"""
-    query = "CREATE USER %(user)s with PASSWORD '%(password)s' %(role_attr_flags)s"
+    query = "CREATE USER \"%(user)s\" with PASSWORD '%(password)s' %(role_attr_flags)s"
     cursor.execute(query % {"user": user, "password": password, "role_attr_flags": role_attr_flags})
     return True
 
@@ -146,27 +146,22 @@ def user_alter(cursor, user, password, role_attr_flags):
 
     # Handle passwords.
     if password is not None or role_attr_flags is not None:
-        # Define columns for select.
-        columns = 'rolpassword,rolsuper,rolinherit,rolcreaterole,rolcreatedb,rolcanlogin,rolreplication'
         # Select password and all flag-like columns in order to verify changes.
-        # rolsuper | rolinherit | rolcreaterole | rolcreatedb | rolcatupdate |
-        # rolcanlogin | rolreplication | rolconnlimit | rolpassword | rolvaliduntil
-        # Not sure how to interpolate properly in python yet...
-        select = "SELECT " + columns + " FROM pg_authid where rolname=%(user)s"
-        cursor.execute(select, {"columns": columns, "user": user})
+        select = "SELECT * FROM pg_authid where rolname=%(user)s"
+        cursor.execute(select, {"user": user})
         # Grab current role attributes.
         current_role_attrs = cursor.fetchone()
 
         if password is not None:
             # Update the role attributes, including password.
-            alter = "ALTER USER %(user)s WITH PASSWORD '%(password)s' %(role_attr_flags)s"
+            alter = "ALTER USER \"%(user)s\" WITH PASSWORD '%(password)s' %(role_attr_flags)s"
             cursor.execute(alter % {"user": user, "password": password, "role_attr_flags": role_attr_flags})
         else:
             # Update the role attributes, excluding password.
-            alter = "ALTER USER %(user)s WITH %(role_attr_flags)s"
+            alter = "ALTER USER \"%(user)s\" WITH %(role_attr_flags)s"
             cursor.execute(alter % {"user": user, "role_attr_flags": role_attr_flags})
         # Grab new role attributes.
-        cursor.execute(select, {"columns": columns, "user": user})
+        cursor.execute(select, {"user": user})
         new_role_attrs = cursor.fetchone()
 
         # Detect any differences between current_ and new_role_attrs.
@@ -180,7 +175,7 @@ def user_delete(cursor, user):
     """Try to remove a user. Returns True if successful otherwise False"""
     cursor.execute("SAVEPOINT ansible_pgsql_user_delete")
     try:
-        cursor.execute("DROP USER %s" % user)
+        cursor.execute("DROP USER \"%s\"" % user)
     except:
         cursor.execute("ROLLBACK TO SAVEPOINT ansible_pgsql_user_delete")
         cursor.execute("RELEASE SAVEPOINT ansible_pgsql_user_delete")
@@ -207,14 +202,14 @@ def get_table_privileges(cursor, user, table):
 
 def grant_table_privilege(cursor, user, table, priv):
     prev_priv = get_table_privileges(cursor, user, table)
-    query = 'GRANT %s ON TABLE %s TO %s' % (priv, table, user)
+    query = 'GRANT %s ON TABLE \"%s\" TO \"%s\"' % (priv, table, user)
     cursor.execute(query)
     curr_priv = get_table_privileges(cursor, user, table)
     return len(curr_priv) > len(prev_priv)
 
 def revoke_table_privilege(cursor, user, table, priv):
     prev_priv = get_table_privileges(cursor, user, table)
-    query = 'REVOKE %s ON TABLE %s FROM %s' % (priv, table, user)
+    query = 'REVOKE %s ON TABLE \"%s\" FROM \"%s\"' % (priv, table, user)
     cursor.execute(query)
     curr_priv = get_table_privileges(cursor, user, table)
     return len(curr_priv) < len(prev_priv)
@@ -246,14 +241,14 @@ def has_database_privilege(cursor, user, db, priv):
 
 def grant_database_privilege(cursor, user, db, priv):
     prev_priv = get_database_privileges(cursor, user, db)
-    query = 'GRANT %s ON DATABASE %s TO %s' % (priv, db, user)
+    query = 'GRANT %s ON DATABASE \"%s\" TO \"%s\"' % (priv, db, user)
     cursor.execute(query)
     curr_priv = get_database_privileges(cursor, user, db)
     return len(curr_priv) > len(prev_priv)
 
 def revoke_database_privilege(cursor, user, db, priv):
     prev_priv = get_database_privileges(cursor, user, db)
-    query = 'REVOKE %s ON DATABASE %s FROM %s' % (priv, db, user)
+    query = 'REVOKE %s ON DATABASE \"%s\" FROM \"%s\"' % (priv, db, user)
     cursor.execute(query)
     curr_priv = get_database_privileges(cursor, user, db)
     return len(curr_priv) < len(prev_priv)

@@ -270,8 +270,8 @@ will still be shown in Ansible, but the command will not succeed.
 Always use the hacking/test-module script when developing modules and it will warn
 you about these kind of things.
 
-Conventions/Recomendations
-``````````````````````````
+Conventions/Recommendations
+```````````````````````````
 
 As a reminder from the example code above, here are some basic conventions
 and guidelines:
@@ -346,6 +346,13 @@ Include it in your module file like this::
         - code: modulename opt1=arg1 opt2=arg2
           description: Optional words describing this example
     '''
+
+The ``description``, ``notes`` and ``description`` within ``examples``
+support formatting in some of the output formats (e.g. ``rst``, ``man``).
+These formatting functions are ``U()``, ``M()``, ``I()``, and ``C()``
+for URL, module, italic, and constant-width respectively. It is suggested
+to use ``C()`` for file and option names, and ``I()`` when referencing
+parameters; module names should be specifies as ``M(module)``.
 
 Building & Testing
 ++++++++++++++++++

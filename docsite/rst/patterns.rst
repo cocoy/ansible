@@ -48,8 +48,14 @@ Adding a lot of hosts?  In 0.6 and later, if you have a lot of hosts following s
 
     [webservers]
     www[01:50].example.com
+    
 
-Leading zeros can be included or removed, as desired, and the ranges are inclusive.
+In 1.0 and later, you can also do this for alphabetic ranges::
+
+    [databases]
+    db-[a:f].example.com
+
+For numeric patterns, leading zeros can be included or removed, as desired. Ranges are inclusive.
 
 Selecting Targets
 +++++++++++++++++
@@ -57,7 +63,7 @@ Selecting Targets
 We'll go over how to use the command line in :doc:`examples` section, however, basically it looks like this::
 
     ansible <pattern_goes_here> -m <module_name> -a <arguments>
-    
+
 Such as::
 
     ansible webservers -m service -a "name=httpd state=restarted"
@@ -70,7 +76,7 @@ This is done by designating particular host names or groups of hosts.
 The following patterns target all hosts in the inventory file::
 
     all
-    *    
+    *
 
 Basically 'all' is an alias for '*'.  It is also possible to address a specific host or hosts::
 
@@ -78,7 +84,7 @@ Basically 'all' is an alias for '*'.  It is also possible to address a specific 
     one.example.com:two.example.com
     192.168.1.50
     192.168.1.*
- 
+
 The following patterns address one or more groups, which are denoted
 with the aforementioned bracket headers in the inventory file::
 
@@ -105,7 +111,7 @@ Host Variables
 ++++++++++++++
 
 It is easy to assign variables to hosts that will be used later in playbooks::
- 
+
    [atlanta]
    host1 http_port=80 maxRequestsPerChild=808
    host2 http_port=303 maxRequestsPerChild=909
@@ -188,26 +194,13 @@ the 'raleigh' group might look like::
 
 It is ok if these files do not exist, this is an optional feature.
 
-Tip: Keeping your inventory file and variables in a git repo (or other version control) 
+Tip: Keeping your inventory file and variables in a git repo (or other version control)
 is an excellent way to track changes to your inventory and host variables.
 
 .. versionadded:: 0.5
    If you ever have two python interpreters on a system, set a
    variable called 'ansible_python_interpreter' to the Python
    interpreter path you would like to use.
-
-YAML Inventory
-++++++++++++++
-
-.. deprecated:: 0.7
-
-Ansible's YAML inventory format is deprecated and will be removed in
-Ansible 0.7.  Ansible 0.6 includes a `conversion script
-<https://github.com/ansible/ansible/blob/devel/examples/scripts/yaml_to_ini.py>`_.
-
-Usage::
-
-    yaml_to_ini.py /etc/ansible/hosts
 
 .. seealso::
 

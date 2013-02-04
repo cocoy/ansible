@@ -22,6 +22,9 @@ class TestCallbacks(object):
     def set_playbook(self, playbook):
         self.playbook = playbook
 
+    def on_no_hosts_remaining(self):
+        pass
+
     def on_start(self):
         EVENTS.append('start')
 
@@ -160,28 +163,6 @@ class TestPlaybook(unittest.TestCase):
        print data
        assert data.find("ears") != -1, "template success"
 
-   def test_aliased_node(self):
-       pb = os.path.join(self.test_dir, 'alias_playbook.yml')
-       actual = self._run(pb, 'test/alias_hosts')
-       expected = {
-           "alias-node.example.com": {
-                "changed": 5,
-                "failures": 0,
-                "ok": 6,
-                "skipped": 1,
-                "unreachable": 0,
-            },
-            "other-alias-node.example.com": {
-                "changed": 1,
-                "failures": 0,
-                "ok": 1,
-                "skipped": 0,
-                "unreachable": 1,
-            },
-       }
-
-       assert utils.jsonify(expected, format=True) == utils.jsonify(actual, format=True)
-
    def test_lookups(self):
        pb = os.path.join(self.test_dir, 'lookup_plugins.yml')
        actual = self._run(pb)
@@ -191,9 +172,9 @@ class TestPlaybook(unittest.TestCase):
        print utils.jsonify(actual, format=True)
        expected =  {
            "localhost": {
-               "changed": 7,
+               "changed": 9,
                "failures": 0,
-               "ok": 9,
+               "ok": 14,
                "skipped": 1,
                "unreachable": 0
            }   
@@ -204,7 +185,7 @@ class TestPlaybook(unittest.TestCase):
        assert utils.jsonify(expected, format=True) == utils.jsonify(actual,format=True)
 
        print "len(EVENTS) = %d" % len(EVENTS)
-       assert len(EVENTS) == 26
+       assert len(EVENTS) == 60
 
    def test_includes(self):
        pb = os.path.join(self.test_dir, 'playbook-includer.yml')

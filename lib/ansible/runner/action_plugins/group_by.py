@@ -20,18 +20,23 @@ import ansible
 from ansible.callbacks import vv
 from ansible.errors import AnsibleError as ae
 from ansible.runner.return_data import ReturnData
-from ansible.utils import parse_kv, template
+from ansible.utils import parse_kv, template, check_conditional
 
 class ActionModule(object):
     ''' Create inventory groups based on variables '''
 
     ### We need to be able to modify the inventory
     BYPASS_HOST_LOOP = True
+    NEEDS_TMPPATH = False
 
     def __init__(self, runner):
         self.runner = runner
 
     def run(self, conn, tmp, module_name, module_args, inject):
+
+        # the group_by module does not need to pay attention to check mode.
+        # it always runs.
+
         args = parse_kv(self.runner.module_args)
         if not 'key' in args:
             raise ae("'key' is a required argument.")
@@ -46,6 +51,8 @@ class ActionModule(object):
         groups = {}
         for host in self.runner.host_set:
             data = inject['hostvars'][host]
+            if not check_conditional(template(self.runner.basedir, self.runner.conditional, data)):
+                continue
             group_name = template(self.runner.basedir, args['key'], data)
             group_name = group_name.replace(' ','-')
             if group_name not in groups:

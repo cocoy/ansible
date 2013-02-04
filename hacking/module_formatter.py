@@ -30,8 +30,7 @@ import time
 import datetime
 import subprocess
 import ansible.utils
-from ansible.utils import module_docs
-
+import ansible.utils.module_docs as module_docs
 
 # Get parent directory of the directory this script lives in
 MODULEDIR=os.path.abspath(os.path.join(
@@ -66,8 +65,7 @@ def html_ify(text):
     t = _BOLD.sub("<b>" + r"\1" + "</b>", t)
     t = _MODULE.sub("<span class='module'>" + r"\1" + "</span>", t)
     t = _URL.sub("<a href='" + r"\1" + "'>" + r"\1" + "</a>", t)
-    #t = _CONST.sub("<code>" + r"\1" + "</code>", t)
-    t = _CONST.sub(r"\1", t)
+    t = _CONST.sub("<code>" + r"\1" + "</code>", t)
     return t
 
 def json_ify(text):
@@ -100,13 +98,9 @@ def rst_ify(text):
 
     t = _ITALIC.sub(r'*' + r"\1" + r"*", text)
     t = _BOLD.sub(r'**' + r"\1" + r"**", t)
-    # mdehaan is disabling because he finds all the Sphinx orange distracting
-    #t = _MODULE.sub(r'``' + r"\1" + r"``", t)
-    t = _MODULE.sub(r"\1", t)
+    t = _MODULE.sub(r'``' + r"\1" + r"``", t)
     t = _URL.sub(r"\1", t)
-    # ditto
-    # t = _CONST.sub(r'``' + r"\1" + r"``", t)
-    t = _CONST.sub(r"\1", t)
+    t = _CONST.sub(r'``' + r"\1" + r"``", t)
 
     return t
 
@@ -288,7 +282,8 @@ def main():
         fname = os.path.join(options.module_dir, module)
         extra = os.path.join("inc", "%s.tex" % module)
 
-        if fname.endswith(".swp"):
+        # probably could just throw out everything with extensions
+        if fname.endswith(".swp") or fname.endswith(".orig") or fname.endswith(".rej"):
             continue
 
         print " processing module source ---> %s" % fname

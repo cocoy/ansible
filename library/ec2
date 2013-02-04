@@ -19,6 +19,7 @@ DOCUMENTATION = '''
 module: ec2
 short_description: create an instance in ec2, return instanceid
 description:
+<<<<<<< HEAD
      - creates ec2 instances and optionally waits for it to be 'running'
 version_added: "0.9"
 options:
@@ -28,6 +29,17 @@ options:
     required: true
     default: null
     aliases: []
+=======
+     - creates ec2 instances and optionally waits for it to be 'running'. This module has a dependency on the external I(euca2ools) package.
+version_added: "0.9"
+options:
+  key_name:
+    description:
+      - key pair to use on the instance
+    required: true
+    default: null
+    aliases: ['keypair']
+>>>>>>> ansible/devel
   group:
     description:
       - security group to use on the instance
@@ -42,19 +54,31 @@ options:
     aliases: []
   image:
     description:
+<<<<<<< HEAD
        - emi (or ami) to use for the instance
+=======
+       - I(emi) (or I(ami)) to use for the instance
+>>>>>>> ansible/devel
     required: true
     default: null
     aliases: []
   kernel:
     description:
+<<<<<<< HEAD
       - kernel eki to use for the instance
+=======
+      - kernel I(eki) to use for the instance
+>>>>>>> ansible/devel
     required: false
     default: null
     aliases: []
   ramdisk:
     description:
+<<<<<<< HEAD
       - ramdisk eri to use for the instance
+=======
+      - ramdisk I(eri) to use for the instance
+>>>>>>> ansible/devel
     required: false
     default: null
     aliases: []
@@ -66,7 +90,11 @@ options:
     aliases: []
   ec2_url:
     description:
+<<<<<<< HEAD
       - url to use to connect to ec2 or your cloud
+=======
+      - url to use to connect to ec2 or your Eucalyptus cloud (for example (https://ec2.amazonaws.com) when using Amazon ec2 directly and not Eucalyptus)
+>>>>>>> ansible/devel
     required: False
     default: null
     aliases: []
@@ -82,6 +110,7 @@ options:
     required: False
     default: null
     aliases: []
+<<<<<<< HEAD
   
 examples:
    - code: "local_action: ec2 keypair=admin instance_type=m1.large image=emi-40603AD1 wait=true group=webserver"
@@ -100,21 +129,60 @@ def _run(cmd):
     stdout, stderr = process.communicate()
     return (process.returncode, stdout, stderr)
 
+=======
+  count:
+    description:
+      - number of instances to launch
+    required: False
+    default: 1
+    aliases: []
+  user_data:
+    version_added: "0.9"
+    description:
+      - opaque blob of data which is made available to the ec2 instance
+    required: False
+    default: null
+    aliases: []
+examples:
+   - code: "local_action: ec2 keypair=admin instance_type=m1.large image=emi-40603AD1 wait=true group=webserver count=3"
+     description: "Examples from Ansible Playbooks"
+requirements: [ "boto" ]
+author: Seth Vidal, Tim Gerla, Lester Wade
+'''
+
+import sys
+import time
+
+try:
+    import boto 
+except ImportError:
+    print "failed=True msg='boto required for this module'"
+    sys.exit(1)
+>>>>>>> ansible/devel
 
 def main():
     module = AnsibleModule(
         argument_spec = dict(
+<<<<<<< HEAD
             keypair = dict(required=True),
+=======
+            key_name = dict(required=True, aliases = ['keypair']),
+>>>>>>> ansible/devel
             group = dict(default='default'),
             instance_type = dict(aliases=['type']),
             image = dict(required=True),
             kernel = dict(),
+<<<<<<< HEAD
             #count = dict(default='1'), # maybe someday
+=======
+            count = dict(default='1'), 
+>>>>>>> ansible/devel
             ramdisk = dict(),
             wait = dict(choices=BOOLEANS, default=False),
             ec2_url = dict(aliases=['EC2_URL']),
             ec2_secret_key = dict(aliases=['EC2_SECRET_KEY']),
             ec2_access_key = dict(aliases=['EC2_ACCESS_KEY']),
+<<<<<<< HEAD
         )
     )
 
@@ -123,12 +191,24 @@ def main():
     instance_type = module.params.get('instance_type')
     image = module.params.get('image')
     #count = module.params.get('count') 
+=======
+            user_data = dict(),
+        )
+    )
+
+    key_name = module.params.get('key_name')
+    group = module.params.get('group')
+    instance_type = module.params.get('instance_type')
+    image = module.params.get('image')
+    count = module.params.get('count') 
+>>>>>>> ansible/devel
     kernel = module.params.get('kernel')
     ramdisk = module.params.get('ramdisk')
     wait = module.params.get('wait')
     ec2_url = module.params.get('ec2_url')
     ec2_secret_key = module.params.get('ec2_secret_key')
     ec2_access_key = module.params.get('ec2_access_key')
+<<<<<<< HEAD
     
     if ec2_url:
         os.environ['EC2_URL'] = ec2_url
@@ -152,6 +232,35 @@ def main():
                                instance_type=instance_type,
                                kernel_id=kernel,
                                ramdisk_id=ramdisk)
+=======
+    user_data = module.params.get('user_data')
+    
+    # allow eucarc environment variables to be used if ansible vars aren't set
+    if not ec2_url and 'EC2_URL' in os.environ:
+        ec2_url = os.environ['EC2_URL']
+    if not ec2_secret_key and 'EC2_SECRET_KEY' in os.environ:
+        ec2_secret_key = os.environ['EC2_SECRET_KEY']
+    if not ec2_access_key and 'EC2_ACCESS_KEY' in os.environ:
+        ec2_access_key = os.environ['EC2_ACCESS_KEY']
+
+    if ec2_url: # if we have an URL set, connect to the specified endpoint 
+        ec2 = boto.connect_ec2_endpoint(ec2_url, ec2_access_key, ec2_secret_key)
+    else: # otherwise it's Amazon.
+        ec2 = boto.connect_ec2(ec2_access_key, ec2_secret_key)
+
+    # Both min_count and max_count equal count parameter. This means the launch request is explicit (we want count, or fail) in how many instances we want.
+   
+    try:
+        res = ec2.run_instances(image, key_name = key_name,
+                                min_count = count, max_count = count,
+                                security_groups = [group],
+                                instance_type = instance_type,
+                                kernel_id = kernel,
+                                ramdisk_id = ramdisk,
+                                user_data = user_data)
+    except boto.exception.EC2ResponseError as e:
+        module.fail_json(msg = "%s: %s" % (e.error_code, e.error_message))
+>>>>>>> ansible/devel
 
     instids = [ i.id for i in res.instances ]
 
@@ -164,14 +273,23 @@ def main():
             res_list = res.connection.get_all_instances(instids)
             this_res = res_list[0]
             num_running = len([ i for i in this_res.instances if i.state=='running' ])
+<<<<<<< HEAD
             time.sleep(2)
     
     # there's only one - but maybe one day there could be more
+=======
+            time.sleep(5)
+    
+>>>>>>> ansible/devel
     instances = []
     for inst in this_res.instances:
         d = {
            'id': inst.id,
            'public_ip': inst.ip_address,
+<<<<<<< HEAD
+=======
+           'public_dns_name': inst.public_dns_name
+>>>>>>> ansible/devel
             }
         instances.append(d)
 

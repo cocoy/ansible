@@ -49,6 +49,16 @@ options:
       - Name of the role to set as owner of the database
     required: false
     default: null
+  template:
+    description:
+      - Template used to create the database
+    required: false
+    default: null
+  encoding:
+    description:
+      - Encoding of the database
+    required: false
+    default: null
   state:
     description:
       - The database state
@@ -57,10 +67,11 @@ options:
     choices: [ "present", "absent" ]
 examples:
    - code: "postgresql_db: db=acme"
-     description: Create a new database with name 'acme'
+     description: Create a new database with name C(acme)
 notes:
-   - The default authentication assumes that you are either logging in as or sudo'ing to the postgres account on the host.
-   - This module uses psycopg2, a Python PostgreSQL database adapter. You must ensure that psycopg2 is installed on the host before using this module. If the remote host is the PostgreSQL server (which is the default case), then PostgreSQL must also be installed on the remote host. For Ubuntu-based systems, install the postgresql, libpq-dev, and python-psycopg2 packages on the remote host before using this module.
+   - The default authentication assumes that you are either logging in as or sudo'ing to the C(postgres) account on the host.
+   - This module uses I(psycopg2), a Python PostgreSQL database adapter. You must ensure that psycopg2 is installed on
+     the host before using this module. If the remote host is the PostgreSQL server (which is the default case), then PostgreSQL must also be installed on the remote host. For Ubuntu-based systems, install the C(postgresql), C(libpq-dev), and C(python-psycopg2) packages on the remote host before using this module.
 requirements: [ psycopg2 ]
 author: Lorin Hochstein
 '''
@@ -77,7 +88,7 @@ else:
 #
 
 def set_owner(cursor, db, owner):
-    query = "ALTER DATABASE %s OWNER TO %s" % (db, owner)
+    query = "ALTER DATABASE \"%s\" OWNER TO \"%s\"" % (db, owner)
     cursor.execute(query)
     return True
 
@@ -94,7 +105,7 @@ def db_exists(cursor, db):
 
 def db_delete(cursor, db):
     if db_exists(cursor, db):
-        query = "DROP DATABASE %s" % db
+        query = "DROP DATABASE \"%s\"" % db
         cursor.execute(query)
         return True
     else:
@@ -103,9 +114,9 @@ def db_delete(cursor, db):
 def db_create(cursor, db, owner, template, encoding):
     if not db_exists(cursor, db):
         if owner:
-            owner = " OWNER %s" % owner
+            owner = " OWNER \"%s\"" % owner
         if template:
-            template = " TEMPLATE %s" % template
+            template = " TEMPLATE \"%s\"" % template
         if encoding:
             encoding = " ENCODING '%s'" % encoding
         query = "CREATE DATABASE %s%s%s%s" % (db, owner, template, encoding)

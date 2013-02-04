@@ -29,11 +29,16 @@ class ActionModule(object):
 
     ### We need to be able to modify the inventory
     BYPASS_HOST_LOOP = True
+    NEEDS_TMPPATH = False
 
     def __init__(self, runner):
         self.runner = runner
 
     def run(self, conn, tmp, module_name, module_args, inject):
+
+        if self.runner.check:
+            return ReturnData(conn=conn, comm_ok=True, result=dict(skipped=True, msg='check mode not supported for this module'))
+
         args = parse_kv(module_args)
         if not 'hostname' in args:
             raise ae("'hostname' is a required argument.")

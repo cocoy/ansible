@@ -40,6 +40,7 @@ class LookupModule(object):
             raise errors.AnsibleError("Can't LOOKUP(redis_kv): module redis is not installed")
 
     def run(self, terms, **kwargs):
+<<<<<<< HEAD
 
         (url,key) = terms.split(',')
         if url == "":
@@ -65,3 +66,34 @@ class LookupModule(object):
             return res
         except:
             return ""  # connection failed or key not found
+=======
+        if isinstance(terms, basestring):
+            terms = [ terms ]
+        ret = []
+        for term in terms:
+            (url,key) = term.split(',')
+            if url == "":
+                url = 'redis://localhost:6379'
+
+            # urlsplit on Python 2.6.1 is broken. Hmm. Probably also the reason
+            # Redis' from_url() doesn't work here.
+
+            p = '(?P<scheme>[^:]+)://?(?P<host>[^:/ ]+).?(?P<port>[0-9]*).*'
+
+            try:
+                m = re.search(p, url)
+                host = m.group('host')
+                port = int(m.group('port'))
+            except AttributeError:
+                raise errors.AnsibleError("Bad URI in redis lookup")
+
+            try:
+                conn = redis.Redis(host=host, port=port)
+                res = conn.get(key)
+                if res is None:
+                    res = ""
+                ret.append(res)
+            except:
+                ret.append("")  # connection failed or key not found
+        return ret
+>>>>>>> ansible/devel

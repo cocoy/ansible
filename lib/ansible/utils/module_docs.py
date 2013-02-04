@@ -43,8 +43,15 @@ def get_docstring(filename, verbose=False):
             if isinstance(child, ast.Assign):
                 if 'DOCUMENTATION' in (t.id for t in child.targets):
                     doc = yaml.load(child.value.s)
+<<<<<<< HEAD
 
     except:
         traceback.print_exc()
         print "unable to parse %s" % filename
+=======
+    except:
+        if verbose == True:
+            traceback.print_exc()
+            print "unable to parse %s" % filename
+>>>>>>> ansible/devel
     return doc

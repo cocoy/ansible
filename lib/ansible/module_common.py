@@ -17,12 +17,14 @@
 
 REPLACER = "#<<INCLUDE_ANSIBLE_MODULE_COMMON>>"
 REPLACER_ARGS = "<<INCLUDE_ANSIBLE_MODULE_ARGS>>"
+REPLACER_LANG = "<<INCLUDE_ANSIBLE_MODULE_LANG>>"
 
 MODULE_COMMON = """
 
 # == BEGIN DYNAMICALLY INSERTED CODE ==
 
 MODULE_ARGS = <<INCLUDE_ANSIBLE_MODULE_ARGS>>
+MODULE_LANG = <<INCLUDE_ANSIBLE_MODULE_LANG>>
 
 BOOLEANS_TRUE = ['yes', 'on', '1', 'true', 1]
 BOOLEANS_FALSE = ['no', 'off', '0', 'false', 0]
@@ -54,6 +56,7 @@ import stat
 import grp
 import pwd
 import platform
+import errno
 
 HAVE_SELINUX=False
 try:
@@ -93,10 +96,10 @@ def get_distribution():
     ''' return the distribution name '''
     if platform.system() == 'Linux':
         try:
-            distribution = platform.linux_distribution()[0].capitalize
+            distribution = platform.linux_distribution()[0].capitalize()
         except:
             # FIXME: MethodMissing, I assume?
-            distribution = platform.dist()[0].capitalize
+            distribution = platform.dist()[0].capitalize()
     else:
         distribution = None
     return distribution
@@ -130,7 +133,7 @@ class AnsibleModule(object):
 
     def __init__(self, argument_spec, bypass_checks=False, no_log=False,
         check_invalid_arguments=True, mutually_exclusive=None, required_together=None,
-        required_one_of=None, add_file_common_args=False):
+        required_one_of=None, add_file_common_args=False, supports_check_mode=False):
 
         '''
         common code for quickly building an ansible module in Python
@@ -139,13 +142,16 @@ class AnsibleModule(object):
         '''
 
         self.argument_spec = argument_spec
+        self.supports_check_mode = supports_check_mode
+        self.check_mode = False
 
         if add_file_common_args:
             self.argument_spec.update(FILE_COMMON_ARGUMENTS)
 
+        os.environ['LANG'] = MODULE_LANG
         (self.params, self.args) = self._load_params()
 
-        self._legal_inputs = []
+        self._legal_inputs = [ 'CHECKMODE' ]
         self._handle_aliases()
 
         if check_invalid_arguments:
@@ -250,14 +256,18 @@ class AnsibleModule(object):
             return context
         try:
             ret = selinux.lgetfilecon(path)
-        except:
-            self.fail_json(path=path, msg='failed to retrieve selinux context')
+        except OSError, e:
+            if e.errno == errno.ENOENT:
+                self.fail_json(path=path, msg='path %s does not exist' % path)
+            else:
+                self.fail_json(path=path, msg='failed to retrieve selinux context')
         if ret[0] == -1:
             return context
         context = ret[1].split(':')
         return context
 
     def user_and_group(self, filename):
+        filename = os.path.expanduser(filename)
         st = os.stat(filename)
         uid = st.st_uid
         gid = st.st_gid
@@ -270,6 +280,12 @@ class AnsibleModule(object):
         except KeyError:
             group = str(gid)
         return (user, group)
+
+    def set_default_selinux_context(self, path, changed):
+        if not HAVE_SELINUX or not self.selinux_enabled():
+            return changed
+        context = self.selinux_default_context(path)
+        return self.set_context_if_different(path, context, False)
 
     def set_context_if_different(self, path, context, changed):
 
@@ -286,7 +302,9 @@ class AnsibleModule(object):
             if context[i] is None:
                 new_context[i] = cur_context[i]
         if cur_context != new_context:
-            try:    
+            try:
+                if self.check_mode:
+                    return True
                 rc = selinux.lsetfilecon(path, ':'.join(new_context))
             except OSError:
                 self.fail_json(path=path, msg='invalid selinux context', new_context=new_context, cur_context=cur_context, input_was=context)
@@ -296,6 +314,7 @@ class AnsibleModule(object):
         return changed
 
     def set_owner_if_different(self, path, owner, changed):
+        path = os.path.expanduser(path)
         if owner is None:
             return changed
         user, group = self.user_and_group(path)
@@ -304,6 +323,8 @@ class AnsibleModule(object):
                 uid = pwd.getpwnam(owner).pw_uid
             except KeyError:
                 self.fail_json(path=path, msg='chown failed: failed to look up user %s' % owner)
+            if self.check_mode:
+                return True
             try:
                 os.chown(path, uid, -1)
             except OSError:
@@ -312,10 +333,13 @@ class AnsibleModule(object):
         return changed
 
     def set_group_if_different(self, path, group, changed):
+        path = os.path.expanduser(path)
         if group is None:
             return changed
         old_user, old_group = self.user_and_group(path)
         if old_group != group:
+            if self.check_mode:
+                return True
             try:
                 gid = grp.getgrnam(group).gr_gid
             except KeyError:
@@ -328,6 +352,7 @@ class AnsibleModule(object):
         return changed
 
     def set_mode_if_different(self, path, mode, changed):
+        path = os.path.expanduser(path)
         if mode is None:
             return changed
         try:
@@ -340,6 +365,8 @@ class AnsibleModule(object):
         prev_mode = stat.S_IMODE(st[stat.ST_MODE])
 
         if prev_mode != mode:
+            if self.check_mode:
+                return True
             # FIXME: comparison against string above will cause this to be executed
             # every time
             try:
@@ -434,6 +461,11 @@ class AnsibleModule(object):
 
     def _check_invalid_arguments(self):
         for (k,v) in self.params.iteritems():
+            if k == 'CHECKMODE':
+                if not self.supports_check_mode:
+                    self.exit_json(skipped=True, msg="remote module does not support check mode")
+                if self.supports_check_mode:
+                    self.check_mode = True
             if k not in self._legal_inputs:
                 self.fail_json(msg="unsupported parameter for module: %s" % k)
 
@@ -464,7 +496,7 @@ class AnsibleModule(object):
         if spec is None:
             return
         for check in spec:
-            counts = [ self.count_terms([field]) for field in check ]
+            counts = [ self._count_terms([field]) for field in check ]
             non_zero = [ c for c in counts if c > 0 ]
             if len(non_zero) > 0:
                 if 0 in counts:
@@ -539,7 +571,7 @@ class AnsibleModule(object):
             journal.sendv(*journal_args)
         else:
             msg = ''
-            syslog.openlog('ansible-%s' % os.path.basename(__file__), 0, syslog.LOG_USER)
+            syslog.openlog('ansible-%s' % str(os.path.basename(__file__)), 0, syslog.LOG_USER)
             for arg in log_args:
                 msg = msg + arg + '=' + str(log_args[arg]) + ' '
             if msg:
@@ -560,7 +592,7 @@ class AnsibleModule(object):
         for d in opt_dirs:
             if d is not None and os.path.exists(d):
                 paths.append(d)
-        paths += os.environ.get('PATH', '').split(':')
+        paths += os.environ.get('PATH', '').split(os.pathsep)
         bin_path = None
         # mangle PATH to include /sbin dirs
         for p in sbin_paths:
@@ -654,7 +686,59 @@ class AnsibleModule(object):
             if self.selinux_enabled():
                 context = self.selinux_context(dest)
                 self.set_context_if_different(src, context, False)
+        else:
+            if self.selinux_enabled():
+                context = self.selinux_default_context(dest)
+                self.set_context_if_different(src, context, False)
         os.rename(src, dest)
+
+    def run_command(self, args, check_rc=False, close_fds=False, executable=None, data=None):
+        '''
+        Execute a command, returns rc, stdout, and stderr.
+        args is the command to run
+        If args is a list, the command will be run with shell=False.
+        Otherwise, the command will be run with shell=True when args is a string.
+        Other arguments:
+        - check_rc (boolean)  Whether to call fail_json in case of
+                              non zero RC.  Default is False.
+        - close_fds (boolean) See documentation for subprocess.Popen().
+                              Default is False.
+        - executable (string) See documentation for subprocess.Popen().
+                              Default is None.
+        '''
+        if isinstance(args, list):
+            shell = False
+        elif isinstance(args, basestring):
+            shell = True
+        else:
+            msg = "Argument 'args' to run_command must be list or string"
+            self.fail_json(rc=257, cmd=args, msg=msg)
+        rc = 0
+        msg = None
+        st_in = None
+        if data:
+            st_in = subprocess.PIPE
+        try:
+            cmd = subprocess.Popen(args,
+                                   executable=executable,
+                                   shell=shell,
+                                   close_fds=close_fds,
+                                   stdin=st_in,
+                                   stdout=subprocess.PIPE, 
+                                   stderr=subprocess.PIPE)
+            if data:
+                cmd.stdin.write(data)
+                cmd.stdin.write('\\n')
+            out, err = cmd.communicate()
+            rc = cmd.returncode
+        except (OSError, IOError), e:
+            self.fail_json(rc=e.errno, msg=str(e), cmd=args)
+        except:
+            self.fail_json(rc=257, msg=traceback.format_exc(), cmd=args)
+        if rc != 0 and check_rc:
+            msg = err.rstrip()
+            self.fail_json(cmd=args, rc=rc, stdout=out, stderr=err, msg=msg)
+        return (rc, out, err)
 
 # == END DYNAMICALLY INSERTED CODE ===
 

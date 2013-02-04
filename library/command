@@ -18,7 +18,6 @@
 # You should have received a copy of the GNU General Public License
 # along with Ansible.  If not, see <http://www.gnu.org/licenses/>.
 
-import subprocess
 import sys
 import datetime
 import traceback
@@ -31,7 +30,7 @@ DOCUMENTATION = '''
 module: command
 short_description: Executes a command on a remote node
 description:
-     - The command module takes the command name followed by a list of space-delimited arguments.
+     - The M(command) module takes the command name followed by a list of space-delimited arguments.
      - The given command will be executed on all selected nodes. It will not be
        processed through the shell, so variables like C($HOME) and operations
        like C("<"), C(">"), C("|"), and C("&") will not work. As such, all
@@ -70,7 +69,7 @@ examples:
    - code: "command: /sbin/shutdown -t now"
      description: "Example from Ansible Playbooks"
    - code: "command: /usr/bin/make_database.sh arg1 arg2 creates=/path/to/database"
-     description: "I(creates), I(removes), and I(chdir) can be specified after the command. For instance, if you only want to run a command if a certain file does not exist, use this."
+     description: "C(creates), C(removes), and C(chdir) can be specified after the command. For instance, if you only want to run a command if a certain file does not exist, use this."
 notes:
     -  If you want to run a command through the shell (say you are using C(<),
        C(>), C(|), etc), you actually want the M(shell) module instead. The
@@ -100,13 +99,7 @@ def main():
         args = shlex.split(args)
     startd = datetime.datetime.now()
 
-    try:
-        cmd = subprocess.Popen(args, executable=executable, shell=shell, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
-        out, err = cmd.communicate()
-    except (OSError, IOError), e:
-        module.fail_json(rc=e.errno, msg=str(e), cmd=args)
-    except:
-        module.fail_json(rc=257, msg=traceback.format_exc(), cmd=args)
+    rc, out, err = module.run_command(args, executable=executable)
 
     endd = datetime.datetime.now()
     delta = endd - startd
@@ -120,7 +113,7 @@ def main():
         cmd     = args,
         stdout  = out.rstrip("\r\n"),
         stderr  = err.rstrip("\r\n"),
-        rc      = cmd.returncode,
+        rc      = rc,
         start   = str(startd),
         end     = str(endd),
         delta   = str(delta),

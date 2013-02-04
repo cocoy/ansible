@@ -22,7 +22,7 @@ Let's use ansible's command line tool to reboot all web servers in Atlanta, 10 a
 set up SSH-agent so it can remember our credentials::
 
     $ ssh-agent bash
-    $ ssh-add ~/.ssh/id_rsa.pub
+    $ ssh-add ~/.ssh/id_rsa
 
 If you don't want to use ssh-agent and want to instead SSH with a
 password instead of keys, you can with ``--ask-pass`` (``-k``), but
@@ -225,6 +225,8 @@ This is an "or" condition.  If you want to further constrain the selection, use 
 also works with ``ansible-playbook``::
 
     $ ansible webservers:dbservers -m command -a "/bin/foo xyz" --limit region
+
+Assuming version 0.9 or later, as with other host patterns, values to limit can be seperated with ";", ":", or ",".
 
 Now let's talk about range selection.   Suppose you have 1000 servers in group 'datacenter', but only want to target one at a time.  This is also easy::
 

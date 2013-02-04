@@ -22,10 +22,10 @@
 DOCUMENTATION = '''
 ---
 module: ping
-short_description: Try to connect to host and return pong on success.
+short_description: Try to connect to host and return C(pong) on success.
 description:
-   - A trivial test module, this module always returns 'pong' on successful
-     contact. It does not make sense in playbooks, but is useful from
+   - A trivial test module, this module always returns C(pong) on successful
+     contact. It does not make sense in playbooks, but it is useful from
      C(/usr/bin/ansible)
 options: {}
 examples:
@@ -36,7 +36,8 @@ author: Michael DeHaan
 
 def main():
     module = AnsibleModule(
-        argument_spec = dict()
+        argument_spec = dict(),
+        supports_check_mode = True
     )
     module.exit_json(ping='pong')
 

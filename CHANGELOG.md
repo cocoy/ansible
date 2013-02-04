@@ -1,7 +1,90 @@
 Ansible Changes By Release
 ==========================
 
-0.9 "Dreams" -- release pending
+1.1 "Mean Street" -- Release pending
+
+* added 'with_random_choice' filter plugin
+
+1.0 "Eruption" -- Feb 1 2013
+
+New modules:
+
+* new sysctl module
+* new pacman module (Arch linux)
+* new apt_key module
+* hg module now in core
+* new ec2_facts module
+* added pkgin module for Joyent SmartOS
+
+New config settings:
+
+* sudo_exe parameter can be set in config to use sudo alternatives
+* sudo_flags parameter can alter the flags used with sudo
+
+New playbook/language features:
+
+* added when_failed and when_changed
+* task includes can now be of infinite depth
+* when_set and when_unset can take more than one var (when_set: $a and $b and $c)
+* added the with_sequence lookup plugin
+* can override "connection:" on an indvidual task
+* parameterized playbook includes can now define complex variables (not just all on one line)
+* making inventory variables available for use in vars_files paths
+* messages when skipping plays are now more clear
+* --extra-vars now has maximum precedence (as intended)
+
+Module fixes and new flags:
+
+* ability to use raw module without python on remote system
+* fix for service status checking on Ubuntu
+* service module now responds to additional exit code for SERVICE_UNAVAILABLE
+* fix for raw module with '-c local'
+* various fixes to git module
+* ec2 module now reports the public DNS name
+* can pass executable= to the raw module to specify alternative shells
+* fix for postgres module when user contains a "-"
+* added additional template variables -- $template_fullpath and $template_run_date
+* raise errors on invalid arguments used with a task include statement
+* shell/command module takes a executable= parameter to specify a different shell than /bin/sh
+* added return code and error output to the raw module
+* added support for @reboot to the cron module
+* misc fixes to the pip module
+* nagios module can schedule downtime for all services on the host
+* various subversion module improvements
+* various mail module improvements
+* SELinux fix for files created by authorized_key module
+* "template override" ??
+* get_url module can now send user/password authorization
+* ec2 module can now deploy multiple simultaneous instances
+* fix for apt_key modules stalling in some situations
+* fix to enable Jinja2 {% include %} to work again in template
+* ec2 module is now powered by Boto
+* setup module can now detect if package manager is using pacman
+* fix for yum module with enablerepo in use on EL 6
+
+Core fixes and new behaviors:
+
+* various fixes for variable resolution in playbooks
+* fixes for handling of "~" in some paths
+* various fixes to DWIM'ing of relative paths
+* /bin/ansible now takes a --list-hosts just like ansible-playbook did
+* various patterns can now take a regex vs a glob if they start with "~" (need docs on which!) - also /usr/bin/ansible
+* allow intersecting host patterns by using "&" ("webservers:!debian:&datacenter1")
+* handle tilde shell character for --private-key
+* hash merging policy is now selectable in the config file, can choose to override or merge
+* environment variables now available for setting all plugin paths (ANSIBLE_CALLBACK_PLUGINS, etc)
+* added packaging file for macports (not upstreamed yet)
+* hacking/test-module script now uses /usr/bin/env properly
+* fixed error formatting for certain classes of playbook syntax errors
+* fix for processing returns with large volumes of output
+
+Inventory files/scripts:
+
+* hostname patterns in the inventory file can now use alphabetic ranges
+* whitespace is now allowed around group variables in the inventory file
+* inventory scripts can now define groups of groups and group vars (need example for docs?)
+
+0.9 "Dreams" -- Nov 30 2012
 
 Highlighted core changes:
 
@@ -13,23 +96,34 @@ Highlighted core changes:
 * flag to allow SSH connection to move files by scp vs sftp (in config file)
 * additional RPM subpackages for easily installing fireball mode deps (server and node)
 * group_vars/host_vars now available to ansible, not just playbooks
+* native ssh connection type (-c ssh) now supports passwords as well as keys
+* ansible-doc program to show details
 
 Other core changes:
 
 * fix for template calls when last character is '$'
-* if ansible_*_interpreter is set on a delegated host, it now works as intended
+* if ansible_python_interpreter is set on a delegated host, it now works as intended
 * --limit can now take "," as seperator as well as ";" or ":"
 * msg is now displaced with newlines when a task fails
-* if any with_ plugin has no results in a list (empty with_items, etc), the task is now skipped
+* if any with_ plugin has no results in a list (empty list for with_items, etc), the task is now skipped
 * various output formatting fixes/improvements
 * fix for Xen dom0/domU detection in default facts
 * 'ansible_domain' fact now available (ex value: example.com)
+* configured remote temp file location is now always used even for root
+* 'register'-ed variables are not recorded for skipped hosts (for example, using only_if/when)
+* duplicate host records for the same host can no longer result when a host is listed in multiple groups
+* ansible-pull now passes --limit to prevent running on multiple hosts when used with generic playbooks
+* remote md5sum check fixes for Solaris 10
+* ability to configure syslog facility used by remote module calls
+* in templating, stray '$' characters are now handled more correctly
 
 Playbook changes:
 
 * relative paths now work for 'first_available_file'
 * various templating engine fixes
 * 'when' is an easier form of only if
+* --list-hosts on the playbook command now supports multiple playbooks on the same command line
+* playbook includes can now be parameterized
 
 Module additions:
 
@@ -39,16 +133,20 @@ Module additions:
 * (script) added 'script' module for pushing and running self-deleting remote scripts
 * (svr4pkg) solaris svr4pkg module
 
-Modules changes:
+Module changes:
 
 * (authorized key) module uses temp file now to prevent failure on full disk
+* (fetch) now uses the 'slurp' internal code to work as you would expect under sudo'ed accounts
+* (fetch) internal usage of md5 sums fixed for BSD
 * (get_url) thirsty is no longer required for directory destinations
 * (git) various git module improvements/tweaks
-* (mysql_db) module takes new grant options
+* (group) now subclassed for various platforms, includes SunOS support
 * (lineinfile) create= option on lineinfile can create the file when it does not exist
+* (mysql_db) module takes new grant options
 * (postgresql_db) module now takes role_attr_flags
 * (service) further upgrades to service module service status reporting
 * (service) tweaks to get service module to play nice with BSD style service systems (rc.conf)
+* (service) possible to pass additional arguments to services
 * (shell) and command module now take an 'executable=' flag for specifying an alternate shell than /bin/sh
 * (user) ability to create SSH keys for users when using user module to create users
 * (user) atomic replacement of files preserves permissions of original file
@@ -62,7 +160,7 @@ Plugin changes:
 * EC2 inventory script now produces nicer failure message if AWS is down (or similar)
 * plugin loading code now more streamlined
 * lookup plugins for DNS text records, environment variables, and redis
-* added a template lookup plugin (with_template: "{{ some_jinja2 }}")
+* added a template lookup plugin $TEMPLATE('filename.j2')
 * various tweaks to the EC2 inventory plugin 
 * jinja2 filters are now pluggable so it's easy to write your own (to_json/etc, are now impl. as such)
 
@@ -237,13 +335,13 @@ playbooks:
 * error reporting if with_items value is unbound
 * with_items no longer creates lots of tasks, creates one task that makes multiple calls
 * can use host_specific facts inside with_items (see above)
-* at the top level of a playbook, set 'gather_facts: False' to skip fact gathering
+* at the top level of a playbook, set 'gather_facts: no' to skip fact gathering
 * first_available_file and with_items used together will now raise an error
 * to catch typos, like 'var' for 'vars', playbooks and tasks now yell on invalid parameters
 * automatically load (directory_of_inventory_file)/group_vars/groupname and /host_vars/hostname in vars_files
 * playbook is now colorized, set ANSIBLE_NOCOLOR=1 if you do not like this, does not colorize if not a TTY
 * hostvars now preserved between plays (regression in 0.5 from 0.4), useful for sharing vars in multinode configs
-* ignore_errors: True on a task can be used to allow a task to fail and not stop the play
+* ignore_errors: yes on a task can be used to allow a task to fail and not stop the play
 * with_items with the apt/yum module will install/remove/update everything in a single command
 
 inventory:
