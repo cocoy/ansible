@@ -40,28 +40,13 @@ class LookupModule(object):
         if HAVE_DNS == False:
             raise errors.AnsibleError("Can't LOOKUP(dnstxt): module dns.resolver is not installed")
 
-    def run(self, terms, **kwargs):
-<<<<<<< HEAD
+    def run(self, terms, inject=None, **kwargs):
 
-        domain = terms.split()[0]
-        string = []
-        try:
-            answers = dns.resolver.query(domain, 'TXT')
-            for rdata in answers:
-                s = rdata.to_text()
-                string.append(s[1:-1])  # Strip outside quotes on TXT rdata
+        terms = utils.listify_lookup_plugin_terms(terms, self.basedir, inject) 
 
-        except dns.resolver.NXDOMAIN:
-            string = 'NXDOMAIN'
-        except dns.resolver.Timeout:
-            string = ''
-        except dns.exception.DNSException as e:
-            raise errors.AnsibleError("dns.resolver unhandled exception", e)
-
-        return ''.join(string)
-=======
-        if isinstance(terms, basestring):
+        if isinstance(basestring, terms):
             terms = [ terms ]
+
         ret = []
         for term in terms:
             domain = term.split()[0]
@@ -81,4 +66,3 @@ class LookupModule(object):
 
             ret.append(''.join(string))
         return ret
->>>>>>> ansible/devel

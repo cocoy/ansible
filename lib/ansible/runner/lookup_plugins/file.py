@@ -17,12 +17,14 @@
 
 from ansible import utils, errors
 import os
+import codecs
 
 class LookupModule(object):
 
     def __init__(self, basedir=None, **kwargs):
         self.basedir = basedir
 
+<<<<<<< HEAD
     def run(self, terms, **kwargs):
 <<<<<<< HEAD
         path = utils.path_dwim(self.basedir, terms)
@@ -32,11 +34,25 @@ class LookupModule(object):
 =======
         if isinstance(terms, basestring):
             terms = [ terms ]
+=======
+    def run(self, terms, inject=None, **kwargs):
+
+        terms = utils.listify_lookup_plugin_terms(terms, self.basedir, inject)
+>>>>>>> fba1f7ef4288ac4cf4b35e5f0dee908ae081ce25
         ret = []
+
+        # this can happen if the variable contains a string, strictly not desired for lookup
+        # plugins, but users may try it, so make it work.
+        if not isinstance(terms, list):
+            terms = [ terms ]
+
         for term in terms:
             path = utils.path_dwim(self.basedir, term)
             if not os.path.exists(path):
                 raise errors.AnsibleError("%s does not exist" % path)
-            ret.append(open(path).read().rstrip())
+
+            ret.append(codecs.open(path, encoding="utf8").read().rstrip())
+
+
         return ret
 >>>>>>> ansible/devel

@@ -1,4 +1,4 @@
-## @{ module }@
+## @{ module | jpfunc }@
 
 {# ------------------------------------------
  #
@@ -11,7 +11,8 @@ New in version @{ version_added }@.
 {% endif %}
 
 {% for desc in description -%}
-@{ desc | jpfunc }@ 
+@{ desc | jpfunc }@
+
 {% endfor %}
 
 {% if options -%}
@@ -35,6 +36,10 @@ New in version @{ version_added }@.
 </table>
 {% endif %}
 
+{% if examples or plainexamples %}
+#### Examples
+{% endif %}
+
 {% for example in examples %}
 {% if example['description'] %}
 * @{ example['description'] | jpfunc }@
@@ -44,7 +49,11 @@ New in version @{ version_added }@.
 @{ example['code'] }@
 ```
 {% endfor %}
- 
+{% if plainexamples -%}
+```
+@{ plainexamples }@
+```
+{% endif %}
 
 {% if notes %}
 #### Notes

@@ -24,6 +24,7 @@ import traceback
 import shlex
 
 import ansible.constants as C
+from ansible.utils import template
 from ansible import utils
 from ansible import errors
 <<<<<<< HEAD
@@ -37,7 +38,7 @@ class ActionModule(object):
     def __init__(self, runner):
         self.runner = runner
 
-    def run(self, conn, tmp, module_name, module_args, inject):
+    def run(self, conn, tmp, module_name, module_args, inject, complex_args=None, **kwargs):
         ''' handler for file transfer operations '''
 
 <<<<<<< HEAD
@@ -53,8 +54,11 @@ class ActionModule(object):
         source  = tokens[0]
         # FIXME: error handling
         args    = " ".join(tokens[1:])
-        source  = utils.template(self.runner.basedir, source, inject)
-        source  = utils.path_dwim(self.runner.basedir, source)
+        source  = template.template(self.runner.basedir, source, inject)
+        if '_original_file' in inject:
+            source = utils.path_dwim_relative(inject['_original_file'], 'files', source, self.runner.basedir)
+        else:
+            source = utils.path_dwim(self.runner.basedir, source)
 
 <<<<<<< HEAD
         exec_rc = None
@@ -87,7 +91,8 @@ class ActionModule(object):
             prepcmd = 'chmod +x %s' % tmp_src
 
         # add preparation steps to one ssh roundtrip executing the script
-        module_args = prepcmd + '; ' + tmp_src + ' ' + args
+        env_string = self.runner._compute_environment_string(inject)
+        module_args = prepcmd + '; ' + env_string + tmp_src + ' ' + args
 
         handler = utils.plugins.action_loader.get('raw', self.runner)
         result = handler.run(conn, tmp, 'raw', module_args, inject)

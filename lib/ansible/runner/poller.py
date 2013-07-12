@@ -1,4 +1,4 @@
-# (c) 2012, Michael DeHaan <michael.dehaan@gmail.com>
+# (c) 2012-2013, Michael DeHaan <michael.dehaan@gmail.com>
 #
 # This file is part of Ansible
 #
@@ -48,7 +48,7 @@ class AsyncPoller(object):
             if jid is None:
                 raise errors.AnsibleError("unexpected error: unable to determine jid")
             if len(self.hosts_to_poll)==0:
-                raise errors.AnsibleErrot("unexpected error: no hosts to poll")
+                raise errors.AnsibleError("unexpected error: no hosts to poll")
         self.jid = jid
 
     def poll(self):
