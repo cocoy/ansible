@@ -151,6 +151,9 @@ class Play(object):
 
         for orig_path in roles:
 
+            # get variables from extra_vars
+            orig_path = template(self.basedir, orig_path, self.playbook.extra_vars)
+
             if type(orig_path) == dict:
                 # what, not a path?
                 role_name = orig_path.get('role', None)
